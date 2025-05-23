@@ -2,6 +2,7 @@ import boto3
 import json
 import os
 from datetime import datetime
+from pathlib import Path
 
 def custom_serializer(obj):
     if isinstance(obj, datetime):
@@ -11,11 +12,81 @@ def custom_serializer(obj):
 def print_policy_document(doc):
     print(json.dumps(doc, indent=4, sort_keys=True))
 
+def safe_filename(filename):
+    """Convert S3 key to safe local filename/path"""
+    # Replace problematic characters
+    safe_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./\\"
+    return ''.join(c if c in safe_chars else '_' for c in filename)
+
+def download_s3_object(s3_client, bucket_name, obj_key, local_base_path):
+    """Download S3 object and create necessary directories"""
+    try:
+        # Create safe local path
+        safe_key = safe_filename(obj_key)
+        local_path = Path(local_base_path) / safe_key
+        
+        # Create parent directories
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Download file
+        print(f"  Downloading: {obj_key} -> {local_path}")
+        s3_client.download_file(bucket_name, obj_key, str(local_path))
+        return True
+    except Exception as e:
+        print(f"  ❌ Error downloading {obj_key}: {e}")
+        return False
+
+def list_and_download_bucket(s3_client, bucket_name):
+    """Recursively list and download all objects from a bucket"""
+    print(f"\n=== Processing Bucket: {bucket_name} ===")
+    
+    # Create local directory for bucket
+    bucket_dir = Path("s3_downloads") / safe_filename(bucket_name)
+    bucket_dir.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        # Get bucket location
+        try:
+            location = s3_client.get_bucket_location(Bucket=bucket_name)
+            print(f"Bucket region: {location.get('LocationConstraint', 'us-east-1')}")
+        except Exception as e:
+            print(f"Could not get bucket location: {e}")
+        
+        # List all objects (handles pagination)
+        paginator = s3_client.get_paginator('list_objects_v2')
+        page_iterator = paginator.paginate(Bucket=bucket_name)
+        
+        total_objects = 0
+        downloaded_count = 0
+        total_size = 0
+        
+        for page in page_iterator:
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    total_objects += 1
+                    obj_key = obj['Key']
+                    obj_size = obj['Size']
+                    total_size += obj_size
+                    
+                    print(f"Object {total_objects}: {obj_key} ({obj_size} bytes)")
+                    
+                    # Download the object
+                    if download_s3_object(s3_client, bucket_name, obj_key, bucket_dir):
+                        downloaded_count += 1
+        
+        print(f"\nBucket Summary:")
+        print(f"  Total objects: {total_objects}")
+        print(f"  Successfully downloaded: {downloaded_count}")
+        print(f"  Total size: {total_size:,} bytes ({total_size/1024/1024:.2f} MB)")
+        
+    except Exception as e:
+        print(f"❌ Error processing bucket {bucket_name}: {e}")
+
 # Prompting for credentials and inputs
 access_key = input("Enter AWS Access Key ID: ").strip()
 secret_access_key = input("Enter AWS Secret Access Key: ").strip()
 region = input("Enter AWS Region [default: us-east-1]: ").strip() or 'us-east-1'
-bucket = input("Enter S3 Bucket name (leave blank to skip S3 download): ").strip()
+bucket = input("Enter specific S3 Bucket name (leave blank to scan all accessible buckets): ").strip()
 
 # Initiating AWS session
 session = boto3.Session(
@@ -102,20 +173,37 @@ if username:
     except Exception as e:
         print(f"Error fetching IAM details for {username}: {e}")
 
-# If a bucket is provided, download files
+# S3 Bucket Discovery and Download
+print(f"\n=== S3 Bucket Analysis ===")
+
+# Create main download directory
+Path("s3_downloads").mkdir(exist_ok=True)
+
 if bucket:
+    # Download specific bucket
+    list_and_download_bucket(s3_client, bucket)
+else:
+    # List all accessible buckets and download from each
     try:
-        os.makedirs(bucket, exist_ok=True)
-        os.chdir(bucket)
-        bucket_objects = s3_client.list_objects_v2(Bucket=bucket)
-        for obj in bucket_objects.get("Contents", []):
-            file_name = obj["Key"]
-            print(f"File {file_name} found!")
-            with open(file_name, "wb") as file:
-                s3_client.download_fileobj(bucket, file_name, file)
-                print(f"Downloaded {file_name}")
+        buckets_response = s3_client.list_buckets()
+        buckets = buckets_response.get('Buckets', [])
+        
+        print(f"Found {len(buckets)} accessible buckets:")
+        for i, bucket_info in enumerate(buckets, 1):
+            bucket_name = bucket_info['Name']
+            creation_date = bucket_info['CreationDate']
+            print(f"{i}. {bucket_name} (Created: {creation_date})")
+        
+        if buckets:
+            print(f"\nProceeding to download from all {len(buckets)} buckets...")
+            for bucket_info in buckets:
+                bucket_name = bucket_info['Name']
+                list_and_download_bucket(s3_client, bucket_name)
+        else:
+            print("No accessible buckets found.")
+            
     except Exception as e:
-        print(f"Error handling S3 bucket '{bucket}': {e}")
+        print(f"Error listing buckets: {e}")
 
 # List secrets
 try:
@@ -180,3 +268,8 @@ try:
         print("No assumable roles found for the current user.")
 except Exception as e:
     print(f"Error while listing/analyzing roles: {e}")
+
+print(f"\n=== Summary ===")
+print(f"✅ AWS Security Assessment Complete")
+print(f"📁 S3 downloads saved to: ./s3_downloads/")
+print(f"🔍 Check the output above for IAM permissions, secrets, and role analysis")

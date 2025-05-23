@@ -1,0 +1,24 @@
+# AWS Security Assessment Script Requirements
+# Install with: pip install -r requirements.txt
+
+# Core AWS SDK
+boto3>=1.34.0
+
+# JSON handling (built-in, but listing for completeness)
+# json - built-in module
+
+# File system operations (built-in, but listing for completeness)  
+# os - built-in module
+# pathlib - built-in module (Python 3.4+)
+
+# Date/time handling (built-in, but listing for completeness)
+# datetime - built-in module
+
+# Optional: Enhanced output formatting
+colorama>=0.4.6
+
+# Optional: Progress bars for large downloads
+tqdm>=4.66.0
+
+# Optional: Better error handling and logging
+loguru>=0.7.2

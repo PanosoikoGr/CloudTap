@@ -142,19 +142,33 @@ logger.info("Starting AWS Security Assessment")
 print(f"{Fore.YELLOW}Please provide AWS credentials:{Style.RESET_ALL}")
 access_key = input(f"{Fore.GREEN}Enter AWS Access Key ID: {Style.RESET_ALL}").strip()
 secret_access_key = input(f"{Fore.GREEN}Enter AWS Secret Access Key: {Style.RESET_ALL}").strip()
+session_token = input(f"{Fore.GREEN}Enter AWS Session Token (leave blank if not using temporary credentials): {Style.RESET_ALL}").strip()
 region = input(f"{Fore.GREEN}Enter AWS Region [default: us-east-1]: {Style.RESET_ALL}").strip() or 'us-east-1'
 bucket = input(f"{Fore.GREEN}Enter specific S3 Bucket name (leave blank to scan all accessible buckets): {Style.RESET_ALL}").strip()
 
 logger.info(f"Configured for region: {region}")
+if session_token:
+    logger.info("Using temporary credentials with session token")
+    print(f"{Fore.CYAN}📋 Using temporary credentials (session token provided){Style.RESET_ALL}")
+else:
+    logger.info("Using permanent credentials (no session token)")
+    print(f"{Fore.CYAN}🔑 Using permanent credentials (no session token){Style.RESET_ALL}")
 
 # Initiating AWS session
 print(f"\n{Fore.BLUE}Initializing AWS session...{Style.RESET_ALL}")
 try:
-    session = boto3.Session(
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_access_key,
-        region_name=region
-    )
+    # Build session parameters
+    session_params = {
+        'aws_access_key_id': access_key,
+        'aws_secret_access_key': secret_access_key,
+        'region_name': region
+    }
+    
+    # Add session token only if provided
+    if session_token:
+        session_params['aws_session_token'] = session_token
+    
+    session = boto3.Session(**session_params)
 
     # Initialize clients
     s3_client = session.client("s3")
@@ -180,6 +194,19 @@ try:
     print(f"{Fore.CYAN}Account: {sts_caller_info['Account']}{Style.RESET_ALL}")
     print(f"{Fore.CYAN}ARN: {sts_caller_info['Arn']}{Style.RESET_ALL}")
     
+    # Show credential type information
+    if session_token:
+        print(f"{Fore.MAGENTA}Credential Type: Temporary (using session token){Style.RESET_ALL}")
+        if 'assumed-role' in sts_caller_info['Arn']:
+            role_parts = sts_caller_info['Arn'].split('/')
+            if len(role_parts) >= 2:
+                assumed_role = role_parts[1]
+                session_name = role_parts[2] if len(role_parts) > 2 else 'unknown'
+                print(f"{Fore.YELLOW}Assumed Role: {assumed_role}{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}Session Name: {session_name}{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.BLUE}Credential Type: Permanent (IAM user){Style.RESET_ALL}")
+    
     logger.info(f"Identity: {sts_caller_info['Arn']}")
 
     arn_parts = sts_caller_info['Arn'].split('/')
@@ -192,8 +219,8 @@ except Exception as e:
     logger.error(error_msg)
     print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
 
-# IAM user policy/group info
-if username:
+# IAM user policy/group info (only for permanent credentials)
+if username and not session_token:
     print(f"\n{Fore.YELLOW}=== IAM Info for User: {username} ==={Style.RESET_ALL}")
     logger.info(f"Analyzing IAM permissions for user: {username}")
     
@@ -258,6 +285,13 @@ if username:
         error_msg = f"Error fetching IAM details for {username}: {e}"
         logger.error(error_msg)
         print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+
+elif session_token:
+    print(f"\n{Fore.YELLOW}=== Role-based Permissions (Session Token) ==={Style.RESET_ALL}")
+    print(f"{Fore.CYAN}📋 Currently using temporary credentials from an assumed role.{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}ℹ️  IAM user policy enumeration skipped (not applicable for assumed roles).{Style.RESET_ALL}")
+    print(f"{Fore.MAGENTA}🔍 The permissions are defined by the assumed role's policies.{Style.RESET_ALL}")
+    logger.info("Skipping IAM user analysis - using assumed role credentials")
 
 # S3 Bucket Discovery and Download
 print(f"\n{Fore.YELLOW}=== S3 Bucket Analysis ==={Style.RESET_ALL}")
@@ -341,79 +375,161 @@ except Exception as e:
     logger.error(error_msg)
     print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
 
-# Role discovery and assumption
-print(f"\n{Fore.YELLOW}=== Role Assumption Analysis ==={Style.RESET_ALL}")
-logger.info("Starting role assumption analysis")
+# Role discovery and assumption (only for permanent credentials to avoid confusion)
+if not session_token:
+    print(f"\n{Fore.YELLOW}=== Role Assumption Analysis ==={Style.RESET_ALL}")
+    logger.info("Starting role assumption analysis")
 
-try:
-    marker = None
-    matching_roles = []
-    all_roles = []
-    
-    # First, collect all roles
-    print(f"{Fore.BLUE}Collecting all IAM roles...{Style.RESET_ALL}")
-    while True:
-        roles_response = iam_client.list_roles(Marker=marker) if marker else iam_client.list_roles()
-        all_roles.extend(roles_response["Roles"])
+    try:
+        marker = None
+        matching_roles = []
+        attempted_roles = []
+        successful_roles = []
+        all_roles = []
         
-        if roles_response.get("IsTruncated"):
-            marker = roles_response["Marker"]
-        else:
-            break
-    
-    logger.info(f"Found {len(all_roles)} total roles")
-    print(f"{Fore.GREEN}Analyzing {len(all_roles)} roles for assumability...{Style.RESET_ALL}")
-    
-    # Analyze roles with progress bar
-    with tqdm(total=len(all_roles), desc="Analyzing roles", unit="role", colour="yellow") as roles_pbar:
-        for role in all_roles:
-            role_name = role["RoleName"]
-            role_arn = role["Arn"]
-            trust_policy = role["AssumeRolePolicyDocument"]
-            trust_policy_json = json.dumps(trust_policy)
+        # First, collect all roles
+        print(f"{Fore.BLUE}Collecting all IAM roles...{Style.RESET_ALL}")
+        while True:
+            roles_response = iam_client.list_roles(Marker=marker) if marker else iam_client.list_roles()
+            all_roles.extend(roles_response["Roles"])
             
-            roles_pbar.set_description(f"Analyzing {role_name[:30]}...")
-
-            # Check if user or ARN appears in trust relationship
-            if username and (username in trust_policy_json or sts_caller_info['Arn'] in trust_policy_json):
-                print(f"\n{Fore.MAGENTA}Role '{role_name}' might be assumable by user '{username}'{Style.RESET_ALL}")
-                print(f" {Fore.CYAN}- Role ARN: {role_arn}{Style.RESET_ALL}")
-                print(f" {Fore.BLUE}- Trust Policy:{Style.RESET_ALL}")
-                print_policy_document(trust_policy)
-                matching_roles.append(role_name)
-                logger.info(f"Found potentially assumable role: {role_name}")
-
-                # Try to assume it
+            if roles_response.get("IsTruncated"):
+                marker = roles_response["Marker"]
+            else:
+                break
+        
+        logger.info(f"Found {len(all_roles)} total roles")
+        print(f"{Fore.GREEN}Found {len(all_roles)} total roles{Style.RESET_ALL}")
+        
+        # Strategy 1: Check trust policies for potential matches
+        print(f"\n{Fore.BLUE}Strategy 1: Analyzing trust policies...{Style.RESET_ALL}")
+        with tqdm(total=len(all_roles), desc="Analyzing trust policies", unit="role", colour="yellow") as roles_pbar:
+            for role in all_roles:
+                role_name = role["RoleName"]
+                role_arn = role["Arn"]
+                trust_policy = role["AssumeRolePolicyDocument"]
+                trust_policy_json = json.dumps(trust_policy)
+                
+                roles_pbar.set_description(f"Analyzing {role_name[:30]}...")
+                
+                # Check multiple conditions for potential assumability
+                potentially_assumable = False
+                reason = []
+                
+                if username and username in trust_policy_json:
+                    potentially_assumable = True
+                    reason.append(f"username '{username}' found in trust policy")
+                
+                if sts_caller_info and sts_caller_info['Arn'] in trust_policy_json:
+                    potentially_assumable = True
+                    reason.append(f"user ARN found in trust policy")
+                
+                if sts_caller_info and sts_caller_info['Account'] in trust_policy_json:
+                    potentially_assumable = True
+                    reason.append(f"account ID found in trust policy")
+                
+                # Check for wildcard or broad permissions
+                if '"AWS": "*"' in trust_policy_json or '"Principal": "*"' in trust_policy_json:
+                    potentially_assumable = True
+                    reason.append("wildcard principal found")
+                
+                if potentially_assumable:
+                    print(f"\n{Fore.MAGENTA}🎯 Role '{role_name}' potentially assumable:{Style.RESET_ALL}")
+                    print(f" {Fore.CYAN}- Role ARN: {role_arn}{Style.RESET_ALL}")
+                    print(f" {Fore.GREEN}- Reason: {', '.join(reason)}{Style.RESET_ALL}")
+                    print(f" {Fore.BLUE}- Trust Policy:{Style.RESET_ALL}")
+                    print_policy_document(trust_policy)
+                    matching_roles.append(role_name)
+                    logger.info(f"Found potentially assumable role: {role_name} - {', '.join(reason)}")
+                
+                roles_pbar.update(1)
+        
+        # Strategy 2: Brute force attempt all roles (based on user permissions)
+        print(f"\n{Fore.BLUE}Strategy 2: Brute force role assumption attempts...{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}Attempting to assume all roles (user has sts:AssumeRole permissions)...{Style.RESET_ALL}")
+        
+        with tqdm(total=len(all_roles), desc="Attempting role assumption", unit="role", colour="red") as attempt_pbar:
+            for role in all_roles:
+                role_name = role["RoleName"]
+                role_arn = role["Arn"]
+                
+                attempt_pbar.set_description(f"Trying {role_name[:25]}...")
+                attempted_roles.append(role_name)
+                
+                # Try to assume every role
                 try:
+                    session_name = f"SecurityTest-{username if username else 'Unknown'}-{role_name[:20]}"
                     assume_response = sts_client.assume_role(
                         RoleArn=role_arn,
-                        RoleSessionName=f"TestSession-{username}"
+                        RoleSessionName=session_name
                     )
-                    print(f" {Fore.GREEN}✅ AssumeRole succeeded!{Style.RESET_ALL}")
+                    
+                    # Success!
+                    print(f"\n{Fore.GREEN}🎉 SUCCESS: Assumed role '{role_name}'!{Style.RESET_ALL}")
+                    print(f" {Fore.CYAN}- Role ARN: {role_arn}{Style.RESET_ALL}")
+                    
                     credentials = assume_response["Credentials"]
-                    print(f" {Fore.YELLOW}Temporary session credentials:{Style.RESET_ALL}")
-                    print(f" {Fore.CYAN}- AccessKeyId: {credentials['AccessKeyId']}{Style.RESET_ALL}")
-                    print(f" {Fore.CYAN}- SecretAccessKey: {credentials['SecretAccessKey']}{Style.RESET_ALL}")
-                    print(f" {Fore.CYAN}- SessionToken: {credentials['SessionToken']}{Style.RESET_ALL}")
-                    print(f" {Fore.CYAN}- Expiration: {credentials['Expiration']}{Style.RESET_ALL}")
+                    print(f" {Fore.YELLOW}📋 Temporary session credentials:{Style.RESET_ALL}")
+                    print(f" {Fore.CYAN}  - AccessKeyId: {credentials['AccessKeyId']}{Style.RESET_ALL}")
+                    print(f" {Fore.CYAN}  - SecretAccessKey: {credentials['SecretAccessKey'][:20]}...{Style.RESET_ALL}")
+                    print(f" {Fore.CYAN}  - SessionToken: {credentials['SessionToken'][:50]}...{Style.RESET_ALL}")
+                    print(f" {Fore.CYAN}  - Expiration: {credentials['Expiration']}{Style.RESET_ALL}")
+                    
+                    successful_roles.append({
+                        'role_name': role_name,
+                        'role_arn': role_arn,
+                        'credentials': credentials
+                    })
+                    
                     logger.success(f"Successfully assumed role: {role_name}")
+                    
+                    # Also show the trust policy for successful roles
+                    trust_policy = role["AssumeRolePolicyDocument"]
+                    print(f" {Fore.BLUE}📜 Trust Policy that allowed this:{Style.RESET_ALL}")
+                    print_policy_document(trust_policy)
+                    
                 except Exception as assume_error:
-                    error_msg = f"Could not assume role '{role_name}': {assume_error}"
-                    print(f" {Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-                    logger.warning(error_msg)
-            
-            roles_pbar.update(1)
-
-    if not matching_roles:
-        print(f"{Fore.YELLOW}No assumable roles found for the current user.{Style.RESET_ALL}")
-        logger.info("No assumable roles found")
-    else:
-        logger.info(f"Found {len(matching_roles)} potentially assumable roles")
+                    # Most will fail, so we'll just log details for debugging
+                    logger.debug(f"Could not assume role '{role_name}': {assume_error}")
+                    
+                    # Only show errors for roles we thought might work
+                    if role_name in matching_roles:
+                        print(f" {Fore.RED}❌ Failed to assume '{role_name}': {assume_error}{Style.RESET_ALL}")
+                
+                attempt_pbar.update(1)
         
-except Exception as e:
-    error_msg = f"Error while listing/analyzing roles: {e}"
-    logger.error(error_msg)
-    print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+        # Summary
+        print(f"\n{Fore.CYAN}📊 Role Assumption Summary:{Style.RESET_ALL}")
+        print(f" {Fore.BLUE}• Total roles analyzed: {len(all_roles)}{Style.RESET_ALL}")
+        print(f" {Fore.YELLOW}• Roles with matching trust policies: {len(matching_roles)}{Style.RESET_ALL}")
+        print(f" {Fore.RED}• Roles attempted: {len(attempted_roles)}{Style.RESET_ALL}")
+        print(f" {Fore.GREEN}• Successfully assumed roles: {len(successful_roles)}{Style.RESET_ALL}")
+        
+        if successful_roles:
+            print(f"\n{Fore.GREEN}🎯 Successfully assumed roles:{Style.RESET_ALL}")
+            for role_info in successful_roles:
+                print(f" {Fore.GREEN}✅ {role_info['role_name']} ({role_info['role_arn']}){Style.RESET_ALL}")
+            logger.success(f"Successfully assumed {len(successful_roles)} roles")
+        else:
+            print(f"{Fore.YELLOW}No roles could be assumed.{Style.RESET_ALL}")
+            logger.info("No roles could be assumed")
+            
+            if matching_roles:
+                print(f"{Fore.YELLOW}However, {len(matching_roles)} roles had matching trust policies:${Style.RESET_ALL}")
+                for role_name in matching_roles:
+                    print(f" {Fore.YELLOW}• {role_name}{Style.RESET_ALL}")
+
+            
+    except Exception as e:
+        error_msg = f"Error while listing/analyzing roles: {e}"
+        logger.error(error_msg)
+        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+
+else:
+    print(f"\n{Fore.YELLOW}=== Role Assumption Analysis ==={Style.RESET_ALL}")
+    print(f"{Fore.CYAN}📋 Role assumption analysis skipped - already using assumed role credentials.{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}ℹ️  To analyze role assumptions, run this tool with permanent IAM user credentials.{Style.RESET_ALL}")
+    logger.info("Skipping role assumption analysis - already using assumed role credentials")
 
 # Final Summary
 print(f"\n{Fore.GREEN}{Back.BLACK}")

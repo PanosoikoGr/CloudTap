@@ -108,7 +108,7 @@ def list_and_download_bucket(s3_client, bucket_name):
                 obj_key = obj['Key']
                 obj_size = obj['Size']
                 
-                pbar.set_description(f"Downloading {obj_key[:30]}...")
+                pbar.set_description(f"Downloading {obj_key[:30]}... ({obj_size:,} bytes)")
                 
                 # Download the object
                 if download_s3_object(s3_client, bucket_name, obj_key, bucket_dir, pbar):

@@ -7,6 +7,9 @@ from colorama import init, Fore, Back, Style
 from tqdm import tqdm
 from loguru import logger
 import sys
+import zipfile
+import requests
+from urllib.parse import urlparse
 
 # Initialize colorama for cross-platform colored output
 init(autoreset=True)
@@ -54,6 +57,266 @@ def download_s3_object(s3_client, bucket_name, obj_key, local_base_path, pbar=No
         logger.error(error_msg)
         print(f"  {Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
         return False
+
+def download_lambda_code(lambda_client, function_name, local_base_path):
+    """Download Lambda function code"""
+    try:
+        # Get function details including download URL
+        function_response = lambda_client.get_function(FunctionName=function_name)
+        code_location = function_response.get('Code', {}).get('Location')
+        
+        if not code_location:
+            print(f"  {Fore.YELLOW}⚠️ No download URL available for {function_name}{Style.RESET_ALL}")
+            return False
+        
+        # Create safe local path
+        safe_name = safe_filename(function_name)
+        local_path = Path(local_base_path) / f"{safe_name}.zip"
+        
+        # Create parent directories
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Download the zip file
+        logger.info(f"Downloading Lambda code: {function_name} -> {local_path}")
+        response = requests.get(code_location, stream=True)
+        response.raise_for_status()
+        
+        with open(local_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        
+        # Also extract the zip for easy inspection
+        extract_path = local_path.parent / safe_name
+        extract_path.mkdir(exist_ok=True)
+        
+        with zipfile.ZipFile(local_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_path)
+        
+        print(f"  {Fore.GREEN}✅ Downloaded and extracted: {function_name}{Style.RESET_ALL}")
+        print(f"  {Fore.CYAN}📁 ZIP: {local_path}{Style.RESET_ALL}")
+        print(f"  {Fore.CYAN}📁 Extracted: {extract_path}{Style.RESET_ALL}")
+        
+        return True
+        
+    except Exception as e:
+        error_msg = f"Error downloading Lambda code for {function_name}: {e}"
+        logger.error(error_msg)
+        print(f"  {Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+        return False
+
+def analyze_lambda_functions(session, current_region):
+    """Comprehensive Lambda function analysis"""
+    print(f"\n{Fore.YELLOW}=== Lambda Functions Analysis ==={Style.RESET_ALL}")
+    logger.info("Starting Lambda functions analysis")
+    
+    # Ask user about region scanning
+    search_all_regions = input(f"{Fore.GREEN}Search Lambda functions in all regions? (y/n) [default: current region only]: {Style.RESET_ALL}").strip().lower()
+    
+    regions_to_scan = []
+    if search_all_regions in ['y', 'yes']:
+        print(f"{Fore.BLUE}Getting all available regions...{Style.RESET_ALL}")
+        try:
+            ec2_client = session.client('ec2', region_name=current_region)
+            regions_response = ec2_client.describe_regions()
+            regions_to_scan = [region['RegionName'] for region in regions_response['Regions']]
+            print(f"{Fore.GREEN}Will scan {len(regions_to_scan)} regions: {', '.join(regions_to_scan)}{Style.RESET_ALL}")
+            logger.info(f"Scanning Lambda functions in all {len(regions_to_scan)} regions")
+        except Exception as e:
+            print(f"{Fore.RED}❌ Error getting regions, falling back to current region: {e}{Style.RESET_ALL}")
+            regions_to_scan = [current_region]
+    else:
+        regions_to_scan = [current_region]
+        print(f"{Fore.CYAN}Scanning Lambda functions in current region: {current_region}{Style.RESET_ALL}")
+        logger.info(f"Scanning Lambda functions in current region only: {current_region}")
+    
+    # Create lambda downloads directory
+    lambda_dir = Path("lambda_downloads")
+    lambda_dir.mkdir(exist_ok=True)
+    
+    total_functions_found = 0
+    total_downloaded = 0
+    
+    # Process each region
+    for region in regions_to_scan:
+        print(f"\n{Fore.MAGENTA}🌍 Scanning region: {region}{Style.RESET_ALL}")
+        logger.info(f"Scanning Lambda functions in region: {region}")
+        
+        try:
+            lambda_client = session.client("lambda", region_name=region)
+            region_functions, region_downloaded = analyze_lambda_functions_in_region(lambda_client, lambda_dir, region)
+            total_functions_found += region_functions
+            total_downloaded += region_downloaded
+            
+        except Exception as e:
+            error_msg = f"Error scanning region {region}: {e}"
+            logger.error(error_msg)
+            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+    
+    # Final summary
+    print(f"\n{Fore.GREEN}🌍 Multi-Region Lambda Summary:{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Regions scanned: {len(regions_to_scan)}{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Total functions found: {total_functions_found}{Style.RESET_ALL}")
+    print(f"  {Fore.GREEN}Total functions downloaded: {total_downloaded}{Style.RESET_ALL}")
+    print(f"  {Fore.MAGENTA}Downloads saved to: ./lambda_downloads/{Style.RESET_ALL}")
+    
+    logger.info(f"Lambda analysis complete across {len(regions_to_scan)} regions: {total_functions_found} functions, {total_downloaded} downloaded")
+
+def analyze_lambda_functions_in_region(lambda_client, lambda_dir, region):
+    """Analyze Lambda functions in a specific region"""
+    region_functions_count = 0
+    region_downloaded_count = 0
+    
+    try:
+        # List all Lambda functions in this region
+        print(f"{Fore.BLUE}Discovering Lambda functions in {region}...{Style.RESET_ALL}")
+        paginator = lambda_client.get_paginator('list_functions')
+        functions = []
+        
+        for page in paginator.paginate():
+            functions.extend(page.get('Functions', []))
+        
+        if not functions:
+            print(f"{Fore.YELLOW}No Lambda functions found in {region}.{Style.RESET_ALL}")
+            logger.info(f"No Lambda functions found in {region}")
+            return 0, 0
+        
+        region_functions_count = len(functions)
+        
+        print(f"{Fore.GREEN}Found {len(functions)} Lambda functions in {region}:{Style.RESET_ALL}")
+        logger.info(f"Found {len(functions)} Lambda functions in {region}")
+        
+        # Process each function
+        downloaded_count = 0
+        with tqdm(total=len(functions), desc=f"Analyzing Lambda functions in {region}", unit="function", colour="purple") as pbar:
+            
+            for func in functions:
+                function_name = func['FunctionName']
+                pbar.set_description(f"Analyzing {function_name[:30]}...")
+                
+                print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+                print(f"{Fore.CYAN}Function: {function_name}{Style.RESET_ALL}")
+                print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+                
+                # Basic function info
+                print(f"{Fore.MAGENTA}📋 Basic Information:{Style.RESET_ALL}")
+                print(f"  {Fore.GREEN}Function Name: {func['FunctionName']}{Style.RESET_ALL}")
+                print(f"  {Fore.GREEN}Runtime: {func.get('Runtime', 'N/A')}{Style.RESET_ALL}")
+                print(f"  {Fore.GREEN}Handler: {func.get('Handler', 'N/A')}{Style.RESET_ALL}")
+                print(f"  {Fore.GREEN}Code Size: {func.get('CodeSize', 0):,} bytes{Style.RESET_ALL}")
+                print(f"  {Fore.GREEN}Timeout: {func.get('Timeout', 'N/A')} seconds{Style.RESET_ALL}")
+                print(f"  {Fore.GREEN}Memory: {func.get('MemorySize', 'N/A')} MB{Style.RESET_ALL}")
+                print(f"  {Fore.GREEN}Last Modified: {func.get('LastModified', 'N/A')}{Style.RESET_ALL}")
+                print(f"  {Fore.GREEN}ARN: {func.get('FunctionArn', 'N/A')}{Style.RESET_ALL}")
+                
+                if func.get('Role'):
+                    print(f"  {Fore.YELLOW}Execution Role: {func['Role']}{Style.RESET_ALL}")
+                
+                # Get detailed configuration (including environment variables)
+                try:
+                    config = lambda_client.get_function_configuration(FunctionName=function_name)
+                    
+                    # Environment variables
+                    env_vars = config.get('Environment', {}).get('Variables', {})
+                    if env_vars:
+                        print(f"\n{Fore.RED}🔑 Environment Variables (SENSITIVE!):{Style.RESET_ALL}")
+                        for key, value in env_vars.items():
+                            print(f"  {Fore.RED}{key}: {value}{Style.RESET_ALL}")
+                        logger.warning(f"Found {len(env_vars)} environment variables in {function_name}")
+                    else:
+                        print(f"\n{Fore.BLUE}Environment Variables: None{Style.RESET_ALL}")
+                    
+                    # VPC Configuration
+                    vpc_config = config.get('VpcConfig', {})
+                    if vpc_config and vpc_config.get('VpcId'):
+                        print(f"\n{Fore.CYAN}🌐 VPC Configuration:{Style.RESET_ALL}")
+                        print(f"  {Fore.GREEN}VPC ID: {vpc_config.get('VpcId')}{Style.RESET_ALL}")
+                        print(f"  {Fore.GREEN}Subnets: {', '.join(vpc_config.get('SubnetIds', []))}{Style.RESET_ALL}")
+                        print(f"  {Fore.GREEN}Security Groups: {', '.join(vpc_config.get('SecurityGroupIds', []))}{Style.RESET_ALL}")
+                    
+                except Exception as e:
+                    logger.error(f"Error getting detailed config for {function_name}: {e}")
+                    print(f"  {Fore.RED}❌ Error getting detailed configuration: {e}{Style.RESET_ALL}")
+                
+                # Check resource-based policy (who can invoke)
+                try:
+                    policy_response = lambda_client.get_policy(FunctionName=function_name)
+                    policy_doc = json.loads(policy_response['Policy'])
+                    print(f"\n{Fore.RED}🚨 Resource-Based Policy (Invocation Permissions):{Style.RESET_ALL}")
+                    print_policy_document(policy_doc)
+                    
+                    # Check for dangerous permissions
+                    policy_str = json.dumps(policy_doc)
+                    if '"Principal": "*"' in policy_str:
+                        print(f"  {Fore.RED}⚠️  WARNING: Function allows public invocation!{Style.RESET_ALL}")
+                        logger.warning(f"Function {function_name} allows public invocation")
+                    
+                except lambda_client.exceptions.ResourceNotFoundException:
+                    print(f"\n{Fore.BLUE}Resource-Based Policy: None (function not publicly accessible){Style.RESET_ALL}")
+                except Exception as e:
+                    logger.error(f"Error getting policy for {function_name}: {e}")
+                    print(f"  {Fore.RED}❌ Error getting resource policy: {e}{Style.RESET_ALL}")
+                
+                # Check for function URLs (direct HTTP endpoints)
+                try:
+                    url_config = lambda_client.get_function_url_config(FunctionName=function_name)
+                    print(f"\n{Fore.RED}🌐 Function URL Configuration:{Style.RESET_ALL}")
+                    print(f"  {Fore.GREEN}URL: {url_config.get('FunctionUrl')}{Style.RESET_ALL}")
+                    print(f"  {Fore.GREEN}Auth Type: {url_config.get('AuthType')}{Style.RESET_ALL}")
+                    print(f"  {Fore.GREEN}CORS: {url_config.get('Cors', 'Not configured')}{Style.RESET_ALL}")
+                    
+                    if url_config.get('AuthType') == 'NONE':
+                        print(f"  {Fore.RED}⚠️  WARNING: Function URL is publicly accessible!{Style.RESET_ALL}")
+                        logger.warning(f"Function {function_name} has public URL: {url_config.get('FunctionUrl')}")
+                    
+                except lambda_client.exceptions.ResourceNotFoundException:
+                    print(f"\n{Fore.BLUE}Function URL: Not configured{Style.RESET_ALL}")
+                except Exception as e:
+                    logger.debug(f"Error getting function URL for {function_name}: {e}")
+                
+                # Check event source mappings
+                try:
+                    mappings = lambda_client.list_event_source_mappings(FunctionName=function_name)
+                    event_sources = mappings.get('EventSourceMappings', [])
+                    
+                    if event_sources:
+                        print(f"\n{Fore.CYAN}⚡ Event Source Mappings:{Style.RESET_ALL}")
+                        for mapping in event_sources:
+                            print(f"  {Fore.GREEN}Source ARN: {mapping.get('EventSourceArn')}{Style.RESET_ALL}")
+                            print(f"  {Fore.GREEN}State: {mapping.get('State')}{Style.RESET_ALL}")
+                            print(f"  {Fore.GREEN}Batch Size: {mapping.get('BatchSize')}{Style.RESET_ALL}")
+                            if mapping.get('LastModified'):
+                                print(f"  {Fore.GREEN}Last Modified: {mapping['LastModified']}{Style.RESET_ALL}")
+                            print()
+                    else:
+                        print(f"\n{Fore.BLUE}Event Source Mappings: None{Style.RESET_ALL}")
+                        
+                except Exception as e:
+                    logger.error(f"Error getting event sources for {function_name}: {e}")
+                    print(f"  {Fore.RED}❌ Error getting event sources: {e}{Style.RESET_ALL}")
+                
+                # Download function code
+                print(f"\n{Fore.YELLOW}📥 Attempting to download function code...{Style.RESET_ALL}")
+                if download_lambda_code(lambda_client, function_name, lambda_dir / region):
+                    downloaded_count += 1
+                
+                pbar.update(1)
+        
+        region_downloaded_count = downloaded_count
+        
+        # Region summary
+        print(f"\n{Fore.GREEN}📊 {region} Lambda Summary:{Style.RESET_ALL}")
+        print(f"  {Fore.CYAN}Functions analyzed: {len(functions)}{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}Function code downloaded: {downloaded_count}{Style.RESET_ALL}")
+        
+        logger.info(f"Region {region} analysis complete: {len(functions)} functions, {downloaded_count} downloaded")
+        
+        return region_functions_count, region_downloaded_count
+        
+    except Exception as e:
+        error_msg = f"Error during Lambda analysis in {region}: {e}"
+        logger.error(error_msg)
+        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+        return 0, 0
 
 def list_and_download_bucket(s3_client, bucket_name):
     """Recursively list and download all objects from a bucket"""
@@ -175,6 +438,7 @@ try:
     sts_client = session.client("sts")
     secrets_client = session.client("secretsmanager")
     iam_client = session.client("iam")
+    lambda_client = session.client("lambda")
     
     print(f"{Fore.GREEN}✅ AWS session initialized successfully{Style.RESET_ALL}")
     logger.info("AWS session initialized successfully")
@@ -374,6 +638,8 @@ except Exception as e:
     error_msg = f"Error listing secrets: {e}"
     logger.error(error_msg)
     print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+
+analyze_lambda_functions(session, region)
 
 # Role discovery and assumption (only for permanent credentials to avoid confusion)
 if not session_token:

@@ -755,8 +755,41 @@ if username and not session_token:
                 PolicyArn=policy["PolicyArn"],
                 VersionId=version_id
             )
-            print(f"   {Fore.BLUE}Permissions for {policy['PolicyName']}:{Style.RESET_ALL}")
+            print(f"   {Fore.BLUE}Permissions for {policy['PolicyName']} (Default Version {version_id}):{Style.RESET_ALL}")
             print_policy_document(policy_version["PolicyVersion"]["Document"])
+            
+            # Ask if user wants to list all versions
+            list_versions = input(f"\n{Fore.CYAN}Do you want to list all versions of policy '{policy['PolicyName']}'? (y/N): {Style.RESET_ALL}").strip().lower()
+            if list_versions in ['y', 'yes']:
+                try:
+                    policy_versions = iam_client.list_policy_versions(PolicyArn=policy["PolicyArn"])
+                    print(f"\n   {Fore.YELLOW}All versions of {policy['PolicyName']}:{Style.RESET_ALL}")
+                    
+                    for version in policy_versions.get("Versions", []):
+                        version_id = version["VersionId"]
+                        is_default = version["IsDefaultVersion"]
+                        create_date = version["CreateDate"].strftime("%Y-%m-%d %H:%M:%S")
+                        status = "DEFAULT" if is_default else "NON-DEFAULT"
+                        
+                        print(f"     {Fore.CYAN}Version {version_id} ({status}) - Created: {create_date}{Style.RESET_ALL}")
+                        
+                        # Get the policy document for this version
+                        version_detail = iam_client.get_policy_version(
+                            PolicyArn=policy["PolicyArn"],
+                            VersionId=version_id
+                        )
+                        print(f"     {Fore.BLUE}Permissions:{Style.RESET_ALL}")
+                        # Indent the policy document output
+                        import json
+                        policy_doc = version_detail["PolicyVersion"]["Document"]
+                        formatted_doc = json.dumps(policy_doc, indent=4)
+                        indented_doc = '\n'.join(['       ' + line for line in formatted_doc.split('\n')])
+                        print(indented_doc)
+                        print()  # Add spacing between versions
+                        
+                except Exception as e:
+                    print(f"     {Fore.RED}Error listing versions for {policy['PolicyName']}: {e}{Style.RESET_ALL}")
+                    logger.error(f"Error listing policy versions: {e}")
 
         # Inline policies
         inline_policies = iam_client.list_user_policies(UserName=username)
@@ -787,8 +820,41 @@ if username and not session_token:
                     PolicyArn=policy["PolicyArn"],
                     VersionId=version_id
                 )
-                print(f"     {Fore.BLUE}Permissions for {policy['PolicyName']}:{Style.RESET_ALL}")
+                print(f"     {Fore.BLUE}Permissions for {policy['PolicyName']} (Default Version {version_id}):{Style.RESET_ALL}")
                 print_policy_document(policy_version["PolicyVersion"]["Document"])
+                
+                # Ask if user wants to list all versions for group policies too
+                list_versions = input(f"\n{Fore.CYAN}Do you want to list all versions of group policy '{policy['PolicyName']}'? (y/N): {Style.RESET_ALL}").strip().lower()
+                if list_versions in ['y', 'yes']:
+                    try:
+                        policy_versions = iam_client.list_policy_versions(PolicyArn=policy["PolicyArn"])
+                        print(f"\n     {Fore.YELLOW}All versions of {policy['PolicyName']}:{Style.RESET_ALL}")
+                        
+                        for version in policy_versions.get("Versions", []):
+                            version_id = version["VersionId"]
+                            is_default = version["IsDefaultVersion"]
+                            create_date = version["CreateDate"].strftime("%Y-%m-%d %H:%M:%S")
+                            status = "DEFAULT" if is_default else "NON-DEFAULT"
+                            
+                            print(f"       {Fore.CYAN}Version {version_id} ({status}) - Created: {create_date}{Style.RESET_ALL}")
+                            
+                            # Get the policy document for this version
+                            version_detail = iam_client.get_policy_version(
+                                PolicyArn=policy["PolicyArn"],
+                                VersionId=version_id
+                            )
+                            print(f"       {Fore.BLUE}Permissions:{Style.RESET_ALL}")
+                            # Indent the policy document output for group policies
+                            import json
+                            policy_doc = version_detail["PolicyVersion"]["Document"]
+                            formatted_doc = json.dumps(policy_doc, indent=4)
+                            indented_doc = '\n'.join(['         ' + line for line in formatted_doc.split('\n')])
+                            print(indented_doc)
+                            print()  # Add spacing between versions
+                            
+                    except Exception as e:
+                        print(f"       {Fore.RED}Error listing versions for {policy['PolicyName']}: {e}{Style.RESET_ALL}")
+                        logger.error(f"Error listing policy versions: {e}")
 
             # Inline group policies
             inline_group_policies = iam_client.list_group_policies(GroupName=group_name)

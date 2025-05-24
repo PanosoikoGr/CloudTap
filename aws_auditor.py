@@ -318,6 +318,259 @@ def analyze_lambda_functions_in_region(lambda_client, lambda_dir, region):
         print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
         return 0, 0
 
+def analyze_beanstalk_environments(session, current_region):
+    """Comprehensive Elastic Beanstalk environment analysis"""
+    print(f"\n{Fore.YELLOW}=== Elastic Beanstalk Analysis ==={Style.RESET_ALL}")
+    logger.info("Starting Elastic Beanstalk analysis")
+    
+    # Ask user about region scanning
+    search_all_regions = input(f"{Fore.GREEN}Search Beanstalk environments in all regions? (y/n) [default: current region only]: {Style.RESET_ALL}").strip().lower()
+    
+    regions_to_scan = []
+    if search_all_regions in ['y', 'yes']:
+        print(f"{Fore.BLUE}Getting all available regions...{Style.RESET_ALL}")
+        try:
+            ec2_client = session.client('ec2', region_name=current_region)
+            regions_response = ec2_client.describe_regions()
+            regions_to_scan = [region['RegionName'] for region in regions_response['Regions']]
+            print(f"{Fore.GREEN}Will scan {len(regions_to_scan)} regions: {', '.join(regions_to_scan)}{Style.RESET_ALL}")
+            logger.info(f"Scanning Beanstalk environments in all {len(regions_to_scan)} regions")
+        except Exception as e:
+            print(f"{Fore.RED}❌ Error getting regions, falling back to current region: {e}{Style.RESET_ALL}")
+            regions_to_scan = [current_region]
+    else:
+        regions_to_scan = [current_region]
+        print(f"{Fore.CYAN}Scanning Beanstalk environments in current region: {current_region}{Style.RESET_ALL}")
+        logger.info(f"Scanning Beanstalk environments in current region only: {current_region}")
+    
+    total_applications = 0
+    total_environments = 0
+    total_env_vars = 0
+    
+    # Process each region
+    for region in regions_to_scan:
+        print(f"\n{Fore.MAGENTA}🌍 Scanning region: {region}{Style.RESET_ALL}")
+        logger.info(f"Scanning Beanstalk environments in region: {region}")
+        
+        try:
+            beanstalk_client = session.client("elasticbeanstalk", region_name=region)
+            region_apps, region_envs, region_vars = analyze_beanstalk_in_region(beanstalk_client, region)
+            total_applications += region_apps
+            total_environments += region_envs
+            total_env_vars += region_vars
+            
+        except Exception as e:
+            error_msg = f"Error scanning Beanstalk in region {region}: {e}"
+            logger.error(error_msg)
+            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+    
+    # Final summary
+    print(f"\n{Fore.GREEN}🌍 Multi-Region Beanstalk Summary:{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Regions scanned: {len(regions_to_scan)}{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Total applications found: {total_applications}{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Total environments found: {total_environments}{Style.RESET_ALL}")
+    print(f"  {Fore.RED}Total environment variables found: {total_env_vars}{Style.RESET_ALL}")
+    
+    logger.info(f"Beanstalk analysis complete across {len(regions_to_scan)} regions: {total_applications} apps, {total_environments} environments, {total_env_vars} env vars")
+
+def analyze_beanstalk_in_region(beanstalk_client, region):
+    """Analyze Beanstalk environments in a specific region"""
+    try:
+        # Get all applications
+        print(f"{Fore.BLUE}Discovering Beanstalk applications in {region}...{Style.RESET_ALL}")
+        applications = beanstalk_client.describe_applications()
+        apps = applications.get('Applications', [])
+        
+        if not apps:
+            print(f"{Fore.YELLOW}No Beanstalk applications found in {region}.{Style.RESET_ALL}")
+            logger.info(f"No Beanstalk applications found in {region}")
+            return 0, 0, 0
+        
+        print(f"{Fore.GREEN}Found {len(apps)} Beanstalk applications in {region}{Style.RESET_ALL}")
+        logger.info(f"Found {len(apps)} Beanstalk applications in {region}")
+        
+        total_environments = 0
+        total_env_vars = 0
+        
+        # Process each application
+        for app in apps:
+            app_name = app['ApplicationName']
+            print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}🚀 Application: {app_name}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+            
+            # Application details
+            print(f"{Fore.MAGENTA}📋 Application Information:{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}Name: {app_name}{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}Description: {app.get('Description', 'N/A')}{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}Date Created: {app.get('DateCreated', 'N/A')}{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}Date Updated: {app.get('DateUpdated', 'N/A')}{Style.RESET_ALL}")
+            
+            # Get application versions
+            try:
+                versions = beanstalk_client.describe_application_versions(ApplicationName=app_name)
+                version_list = versions.get('ApplicationVersions', [])
+                if version_list:
+                    print(f"\n{Fore.BLUE}📦 Application Versions ({len(version_list)} total):{Style.RESET_ALL}")
+                    for version in version_list[:5]:  # Show first 5 versions
+                        print(f"  {Fore.GREEN}• {version['VersionLabel']} - {version.get('Description', 'No description')}{Style.RESET_ALL}")
+                        if version.get('SourceBundle'):
+                            print(f"    {Fore.CYAN}Source: {version['SourceBundle']['S3Bucket']}/{version['SourceBundle']['S3Key']}{Style.RESET_ALL}")
+                    if len(version_list) > 5:
+                        print(f"  {Fore.YELLOW}... and {len(version_list) - 5} more versions{Style.RESET_ALL}")
+            except Exception as e:
+                logger.error(f"Error getting versions for {app_name}: {e}")
+            
+            # Get environments for this application
+            try:
+                environments = beanstalk_client.describe_environments(ApplicationName=app_name)
+                envs = environments.get('Environments', [])
+                
+                if not envs:
+                    print(f"\n{Fore.YELLOW}No environments found for application {app_name}{Style.RESET_ALL}")
+                    continue
+                
+                print(f"\n{Fore.BLUE}🌍 Environments ({len(envs)} total):{Style.RESET_ALL}")
+                total_environments += len(envs)
+                
+                # Process each environment
+                for env in envs:
+                    env_name = env['EnvironmentName']
+                    env_id = env['EnvironmentId']
+                    
+                    print(f"\n  {Fore.CYAN}--- Environment: {env_name} ---{Style.RESET_ALL}")
+                    print(f"  {Fore.GREEN}Environment ID: {env_id}{Style.RESET_ALL}")
+                    print(f"  {Fore.GREEN}Status: {env.get('Status', 'N/A')}{Style.RESET_ALL}")
+                    print(f"  {Fore.GREEN}Health: {env.get('Health', 'N/A')}{Style.RESET_ALL}")
+                    print(f"  {Fore.GREEN}Platform: {env.get('PlatformArn', env.get('SolutionStackName', 'N/A'))}{Style.RESET_ALL}")
+                    print(f"  {Fore.GREEN}Date Created: {env.get('DateCreated', 'N/A')}{Style.RESET_ALL}")
+                    print(f"  {Fore.GREEN}Date Updated: {env.get('DateUpdated', 'N/A')}{Style.RESET_ALL}")
+                    
+                    if env.get('CNAME'):
+                        print(f"  {Fore.YELLOW}🌐 URL: {env['CNAME']}{Style.RESET_ALL}")
+                    
+                    if env.get('EndpointURL'):
+                        print(f"  {Fore.YELLOW}🔗 Endpoint: {env['EndpointURL']}{Style.RESET_ALL}")
+                    
+                    # Get environment configuration (this contains environment variables)
+                    try:
+                        config_settings = beanstalk_client.describe_configuration_settings(
+                            ApplicationName=app_name,
+                            EnvironmentName=env_name
+                        )
+                        
+                        config_options = config_settings.get('ConfigurationSettings', [])
+                        if config_options:
+                            options = config_options[0].get('OptionSettings', [])
+                            
+                            # Filter for environment variables and other sensitive configs
+                            sensitive_options = []
+                            env_vars = []
+                            
+                            for option in options:
+                                namespace = option.get('Namespace', '')
+                                option_name = option.get('OptionName', '')
+                                value = option.get('Value', '')
+                                
+                                # Environment variables
+                                if namespace == 'aws:elasticbeanstalk:application:environment':
+                                    env_vars.append((option_name, value))
+                                
+                                # Other potentially sensitive configurations
+                                elif any(keyword in namespace.lower() or keyword in option_name.lower() 
+                                       for keyword in ['secret', 'key', 'password', 'token', 'credential']):
+                                    sensitive_options.append((namespace, option_name, value))
+                            
+                            # Display environment variables
+                            if env_vars:
+                                print(f"\n  {Fore.RED}🔑 Environment Variables (SENSITIVE!):{Style.RESET_ALL}")
+                                total_env_vars += len(env_vars)
+                                for var_name, var_value in env_vars:
+                                    print(f"    {Fore.RED}{var_name}: {var_value}{Style.RESET_ALL}")
+                                logger.warning(f"Found {len(env_vars)} environment variables in {env_name}")
+                            else:
+                                print(f"\n  {Fore.BLUE}Environment Variables: None{Style.RESET_ALL}")
+                            
+                            # Display other sensitive configurations
+                            if sensitive_options:
+                                print(f"\n  {Fore.YELLOW}🔐 Other Sensitive Configurations:{Style.RESET_ALL}")
+                                for namespace, opt_name, opt_value in sensitive_options:
+                                    print(f"    {Fore.YELLOW}{namespace}:{opt_name} = {opt_value}{Style.RESET_ALL}")
+                            
+                            # Show some other interesting configurations
+                            interesting_configs = []
+                            for option in options:
+                                namespace = option.get('Namespace', '')
+                                option_name = option.get('OptionName', '')
+                                value = option.get('Value', '')
+                                
+                                if namespace in [
+                                    'aws:elasticbeanstalk:application',
+                                    'aws:elasticbeanstalk:container:nodejs:staticfiles',
+                                    'aws:elasticbeanstalk:container:python:staticfiles',
+                                    'aws:elasticbeanstalk:healthreporting:system'
+                                ]:
+                                    interesting_configs.append((namespace, option_name, value))
+                            
+                            if interesting_configs:
+                                print(f"\n  {Fore.CYAN}⚙️ Application Configuration (sample):{Style.RESET_ALL}")
+                                for namespace, opt_name, opt_value in interesting_configs[:5]:
+                                    print(f"    {Fore.CYAN}{namespace}:{opt_name} = {opt_value}{Style.RESET_ALL}")
+                                if len(interesting_configs) > 5:
+                                    print(f"    {Fore.BLUE}... and {len(interesting_configs) - 5} more config options{Style.RESET_ALL}")
+                                    
+                    except Exception as e:
+                        error_msg = f"Error getting configuration for environment {env_name}: {e}"
+                        logger.error(error_msg)
+                        print(f"    {Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+                    
+                    # Get environment resources (EC2 instances, load balancers, etc.)
+                    try:
+                        resources = beanstalk_client.describe_environment_resources(EnvironmentName=env_name)
+                        env_resources = resources.get('EnvironmentResources', {})
+                        
+                        instances = env_resources.get('Instances', [])
+                        load_balancers = env_resources.get('LoadBalancers', [])
+                        
+                        if instances or load_balancers:
+                            print(f"\n  {Fore.BLUE}🏗️ Environment Resources:{Style.RESET_ALL}")
+                            
+                            if instances:
+                                print(f"    {Fore.GREEN}EC2 Instances: {len(instances)}{Style.RESET_ALL}")
+                                for instance in instances[:3]:  # Show first 3 instances
+                                    print(f"      {Fore.CYAN}• {instance['Id']}{Style.RESET_ALL}")
+                                if len(instances) > 3:
+                                    print(f"      {Fore.BLUE}... and {len(instances) - 3} more instances{Style.RESET_ALL}")
+                            
+                            if load_balancers:
+                                print(f"    {Fore.GREEN}Load Balancers: {len(load_balancers)}{Style.RESET_ALL}")
+                                for lb in load_balancers:
+                                    print(f"      {Fore.CYAN}• {lb['Name']}{Style.RESET_ALL}")
+                                    
+                    except Exception as e:
+                        logger.debug(f"Error getting resources for environment {env_name}: {e}")
+                        
+            except Exception as e:
+                error_msg = f"Error getting environments for application {app_name}: {e}"
+                logger.error(error_msg)
+                print(f"  {Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+        
+        # Region summary
+        print(f"\n{Fore.GREEN}📊 {region} Beanstalk Summary:{Style.RESET_ALL}")
+        print(f"  {Fore.CYAN}Applications: {len(apps)}{Style.RESET_ALL}")
+        print(f"  {Fore.CYAN}Environments: {total_environments}{Style.RESET_ALL}")
+        print(f"  {Fore.RED}Environment variables found: {total_env_vars}{Style.RESET_ALL}")
+        
+        logger.info(f"Region {region} Beanstalk analysis complete: {len(apps)} apps, {total_environments} environments, {total_env_vars} env vars")
+        
+        return len(apps), total_environments, total_env_vars
+        
+    except Exception as e:
+        error_msg = f"Error during Beanstalk analysis in {region}: {e}"
+        logger.error(error_msg)
+        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+        return 0, 0, 0
+
 def list_and_download_bucket(s3_client, bucket_name):
     """Recursively list and download all objects from a bucket"""
     print(f"\n{Fore.YELLOW}=== Processing Bucket: {bucket_name} ==={Style.RESET_ALL}")
@@ -640,6 +893,7 @@ except Exception as e:
     print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
 
 analyze_lambda_functions(session, region)
+analyze_beanstalk_environments(session, region)
 
 # Role discovery and assumption (only for permanent credentials to avoid confusion)
 if not session_token:

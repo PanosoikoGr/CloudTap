@@ -11,6 +11,13 @@ import zipfile
 import requests
 from urllib.parse import urlparse
 
+AWS_REGIONS = [
+    'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
+    'eu-west-1', 'eu-west-2', 'eu-west-3', 'eu-central-1', 'eu-north-1',
+    'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1', 'ap-northeast-2', 'ap-south-1',
+    'ca-central-1', 'sa-east-1', 'af-south-1', 'ap-east-1', 'me-south-1'
+]
+
 # Initialize colorama for cross-platform colored output
 init(autoreset=True)
 
@@ -122,8 +129,10 @@ def analyze_lambda_functions(session, current_region):
             print(f"{Fore.GREEN}Will scan {len(regions_to_scan)} regions: {', '.join(regions_to_scan)}{Style.RESET_ALL}")
             logger.info(f"Scanning Lambda functions in all {len(regions_to_scan)} regions")
         except Exception as e:
-            print(f"{Fore.RED}❌ Error getting regions, falling back to current region: {e}{Style.RESET_ALL}")
-            regions_to_scan = [current_region]
+            print(f"{Fore.RED}❌ Error getting regions dynamically: {e}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Using hardcoded region list...{Style.RESET_ALL}")
+            # Same hardcoded region list
+            regions_to_scan = AWS_REGIONS
     else:
         regions_to_scan = [current_region]
         print(f"{Fore.CYAN}Scanning Lambda functions in current region: {current_region}{Style.RESET_ALL}")
@@ -336,8 +345,10 @@ def analyze_beanstalk_environments(session, current_region):
             print(f"{Fore.GREEN}Will scan {len(regions_to_scan)} regions: {', '.join(regions_to_scan)}{Style.RESET_ALL}")
             logger.info(f"Scanning Beanstalk environments in all {len(regions_to_scan)} regions")
         except Exception as e:
-            print(f"{Fore.RED}❌ Error getting regions, falling back to current region: {e}{Style.RESET_ALL}")
-            regions_to_scan = [current_region]
+            print(f"{Fore.RED}❌ Error getting regions dynamically: {e}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Falling back to hardcoded region list...{Style.RESET_ALL}")
+            # Same hardcoded region list
+            regions_to_scan = AWS_REGIONS
     else:
         regions_to_scan = [current_region]
         print(f"{Fore.CYAN}Scanning Beanstalk environments in current region: {current_region}{Style.RESET_ALL}")
@@ -703,13 +714,18 @@ def analyze_sns_topics(session, current_region):
         print(f"{Fore.BLUE}Getting all available regions...{Style.RESET_ALL}")
         try:
             ec2_client = session.client('ec2', region_name=current_region)
+            print(f"{Fore.BLUE}Calling EC2 describe_regions()...{Style.RESET_ALL}")
             regions_response = ec2_client.describe_regions()
             regions_to_scan = [region['RegionName'] for region in regions_response['Regions']]
             print(f"{Fore.GREEN}Will scan {len(regions_to_scan)} regions: {', '.join(regions_to_scan)}{Style.RESET_ALL}")
             logger.info(f"Scanning SNS topics in all {len(regions_to_scan)} regions")
         except Exception as e:
-            print(f"{Fore.RED}❌ Error getting regions, falling back to current region: {e}{Style.RESET_ALL}")
-            regions_to_scan = [current_region]
+            print(f"{Fore.RED}❌ Error getting regions dynamically: {e}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Falling back to hardcoded region list...{Style.RESET_ALL}")
+            logger.error(f"Error getting regions: {e}")
+            # Hardcoded region list based on user's requirements
+            regions_to_scan = AWS_REGIONS
+            print(f"{Fore.GREEN}Using {len(regions_to_scan)} hardcoded regions{Style.RESET_ALL}")
     else:
         regions_to_scan = [current_region]
         print(f"{Fore.CYAN}Scanning SNS topics in current region: {current_region}{Style.RESET_ALL}")
@@ -768,8 +784,10 @@ def list_all_sns_subscriptions(session, current_region):
             regions_response = ec2_client.describe_regions()
             regions_to_scan = [region['RegionName'] for region in regions_response['Regions']]
         except Exception as e:
-            print(f"{Fore.RED}❌ Error getting regions: {e}{Style.RESET_ALL}")
-            regions_to_scan = [current_region]
+            print(f"{Fore.RED}❌ Error getting regions dynamically: {e}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Using hardcoded region list...{Style.RESET_ALL}")
+            # Same hardcoded region list
+            regions_to_scan =  AWS_REGIONS
     else:
         regions_to_scan = [current_region]
     
@@ -1215,7 +1233,7 @@ print(f"{Fore.CYAN}4. Analyze Beanstalk Environments{Style.RESET_ALL}")
 print(f"{Fore.RED}5. Run Full Scan{Style.RESET_ALL}")
 print(f"{Fore.CYAN}Press Enter to skip optional analyses{Style.RESET_ALL}")
 
-choice = input(f"{Fore.GREEN}Enter your choice (1-3) or press Enter to continue: {Style.RESET_ALL}").strip()
+choice = input(f"{Fore.GREEN}Enter your choice (1-5) or press Enter to continue: {Style.RESET_ALL}").strip()
 
 if choice == "1":
     analyze_lambda_functions(session, region)

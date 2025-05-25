@@ -25,9 +25,10 @@
 - **Lambda functions**
   - Get-Download-Enum Lambda functions and all region
 
-- **Assumable Role Detection**  
+- **Assumable Role Detection**
   - Analyzes trust policies of IAM roles to identify assumable roles based on your current identity.  
   - Attempts to assume those roles and logs results.
+  - Gets the attached policies of that role
 
 - **Formatted JSON Output**  
   - Policies and secrets are printed with clear formatting for easy review and logging.

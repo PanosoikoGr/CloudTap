@@ -8,6 +8,10 @@
   - Extracts group memberships and attached/inlined group policies.
   - Extracts all versions of manahed policies
 
+- **SNS Discovery**
+  - Able to find SNS and subscribe to them
+  - List all SNS subscriptions
+
 - **Secrets Discovery**  
   - Lists all secrets in AWS Secrets Manager.  
   - Retrieves and prints contents of each secret securely.

@@ -1523,8 +1523,8 @@ if not session_token:
                     credentials = assume_response["Credentials"]
                     print(f" {Fore.YELLOW}📋 Temporary session credentials:{Style.RESET_ALL}")
                     print(f" {Fore.CYAN}  - AccessKeyId: {credentials['AccessKeyId']}{Style.RESET_ALL}")
-                    print(f" {Fore.CYAN}  - SecretAccessKey: {credentials['SecretAccessKey'][:20]}...{Style.RESET_ALL}")
-                    print(f" {Fore.CYAN}  - SessionToken: {credentials['SessionToken'][:50]}...{Style.RESET_ALL}")
+                    print(f" {Fore.CYAN}  - SecretAccessKey: {credentials['SecretAccessKey']}{Style.RESET_ALL}")
+                    print(f" {Fore.CYAN}  - SessionToken: {credentials['SessionToken']}{Style.RESET_ALL}")
                     print(f" {Fore.CYAN}  - Expiration: {credentials['Expiration']}{Style.RESET_ALL}")
                     
                     successful_roles.append({
@@ -1550,14 +1550,6 @@ if not session_token:
                         print(f" {Fore.RED}❌ Failed to assume '{role_name}': {assume_error}{Style.RESET_ALL}")
                 
                 attempt_pbar.update(1)
-        
-        # 
-        credentials = assume_response["Credentials"]
-        print(f" {Fore.YELLOW}📋 Temporary session credentials:{Style.RESET_ALL}")
-        print(f" {Fore.CYAN}  - AccessKeyId: {credentials['AccessKeyId']}{Style.RESET_ALL}")
-        print(f" {Fore.CYAN}  - SecretAccessKey: {credentials['SecretAccessKey']}{Style.RESET_ALL}")
-        print(f" {Fore.CYAN}  - SessionToken: {credentials['SessionToken']}{Style.RESET_ALL}")
-        print(f" {Fore.CYAN}  - Expiration: {credentials['Expiration']}{Style.RESET_ALL}")
         
         if successful_roles:
             print(f"\n{Fore.GREEN}🎯 Successfully assumed roles:{Style.RESET_ALL}")

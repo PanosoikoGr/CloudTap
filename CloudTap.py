@@ -31,8 +31,14 @@ def custom_serializer(obj):
         return obj.isoformat()
     raise TypeError(f"Type {type(obj)} not serializable")
 
-def print_policy_document(doc):
-    print(f"{Fore.CYAN}{json.dumps(doc, indent=4, sort_keys=True)}{Style.RESET_ALL}")
+def print_policy_document(policy_doc, indent=""):
+    """Print a policy document with proper formatting and optional indentation"""
+    try:
+        formatted_policy = json.dumps(policy_doc, indent=2, default=str)
+        for line in formatted_policy.split('\n'):
+            print(f"{indent}{Fore.WHITE}{line}{Style.RESET_ALL}")
+    except Exception as e:
+        print(f"{indent}{Fore.RED}Error formatting policy: {e}{Style.RESET_ALL}")
 
 def safe_filename(filename):
     """Convert S3 key to safe local filename/path"""
@@ -837,6 +843,158 @@ def list_all_sns_subscriptions(session, current_region):
     print(f"\n{Fore.GREEN}Total subscriptions across all regions: {total_subscriptions}{Style.RESET_ALL}")
     logger.info(f"Total SNS subscriptions found: {total_subscriptions}")
 
+def analyze_role_permissions(iam_client, role_name):
+    """Analyze and display all permissions for a given role"""
+    print(f"    {Fore.BLUE}📋 Analyzing permissions for role '{role_name}'...{Style.RESET_ALL}")
+    
+    try:
+        # Get attached managed policies
+        managed_policies_response = iam_client.list_attached_role_policies(RoleName=role_name)
+        managed_policies = managed_policies_response.get('AttachedPolicies', [])
+        
+        # Get inline policies
+        inline_policies_response = iam_client.list_role_policies(RoleName=role_name)
+        inline_policies = inline_policies_response.get('PolicyNames', [])
+        
+        print(f"    {Fore.CYAN}  - Managed Policies: {len(managed_policies)}{Style.RESET_ALL}")
+        print(f"    {Fore.CYAN}  - Inline Policies: {len(inline_policies)}{Style.RESET_ALL}")
+        
+        all_permissions = []
+        
+        # Process managed policies
+        for policy in managed_policies:
+            policy_arn = policy['PolicyArn']
+            policy_name = policy['PolicyName']
+            print(f"    {Fore.YELLOW}    📄 Managed Policy: {policy_name}{Style.RESET_ALL}")
+            print(f"    {Fore.CYAN}       ARN: {policy_arn}{Style.RESET_ALL}")
+            
+            try:
+                # Get policy versions
+                policy_versions = iam_client.list_policy_versions(PolicyArn=policy_arn)
+                default_version = None
+                
+                print(f"    {Fore.BLUE}       Policy Versions:{Style.RESET_ALL}")
+                for version in policy_versions['Versions']:
+                    version_id = version['VersionId']
+                    is_default = version['IsDefaultVersion']
+                    created_date = version['CreateDate']
+                    
+                    print(f"    {Fore.CYAN}         - Version {version_id} {'(DEFAULT)' if is_default else ''} - Created: {created_date}{Style.RESET_ALL}")
+                    
+                    if is_default:
+                        default_version = version_id
+                
+                # Get the default version policy document
+                if default_version:
+                    policy_version = iam_client.get_policy_version(
+                        PolicyArn=policy_arn,
+                        VersionId=default_version
+                    )
+                    policy_document = policy_version['PolicyVersion']['Document']
+                    
+                    print(f"    {Fore.GREEN}       Default Version ({default_version}) Permissions:{Style.RESET_ALL}")
+                    print_policy_document(policy_document, indent="         ")
+                    
+                    # Extract permissions for summary
+                    if 'Statement' in policy_document:
+                        for statement in policy_document['Statement']:
+                            if statement.get('Effect') == 'Allow':
+                                actions = statement.get('Action', [])
+                                if isinstance(actions, str):
+                                    actions = [actions]
+                                all_permissions.extend(actions)
+                                
+            except Exception as policy_error:
+                print(f"    {Fore.RED}       ❌ Error reading policy: {policy_error}{Style.RESET_ALL}")
+        
+        # Process inline policies
+        for policy_name in inline_policies:
+            print(f"    {Fore.YELLOW}    📄 Inline Policy: {policy_name}{Style.RESET_ALL}")
+            
+            try:
+                inline_policy = iam_client.get_role_policy(RoleName=role_name, PolicyName=policy_name)
+                policy_document = inline_policy['PolicyDocument']
+                
+                print(f"    {Fore.GREEN}       Policy Document:{Style.RESET_ALL}")
+                print_policy_document(policy_document, indent="         ")
+                
+                # Extract permissions for summary
+                if 'Statement' in policy_document:
+                    for statement in policy_document['Statement']:
+                        if statement.get('Effect') == 'Allow':
+                            actions = statement.get('Action', [])
+                            if isinstance(actions, str):
+                                actions = [actions]
+                            all_permissions.extend(actions)
+                            
+            except Exception as inline_error:
+                print(f"    {Fore.RED}       ❌ Error reading inline policy: {inline_error}{Style.RESET_ALL}")
+        
+        # Show permission summary
+        if all_permissions:
+            unique_permissions = list(set(all_permissions))
+            print(f"    {Fore.MAGENTA}    📊 Permission Summary ({len(unique_permissions)} unique actions):{Style.RESET_ALL}")
+            
+            # Group permissions by service
+            service_permissions = {}
+            for perm in unique_permissions:
+                if ':' in perm:
+                    service = perm.split(':')[0]
+                    if service not in service_permissions:
+                        service_permissions[service] = []
+                    service_permissions[service].append(perm)
+                else:
+                    if 'Other' not in service_permissions:
+                        service_permissions['Other'] = []
+                    service_permissions['Other'].append(perm)
+            
+            for service, perms in sorted(service_permissions.items()):
+                print(f"    {Fore.CYAN}       {service}: {len(perms)} actions{Style.RESET_ALL}")
+                for perm in sorted(perms)[:5]:  # Show first 5 permissions
+                    print(f"    {Fore.WHITE}         • {perm}{Style.RESET_ALL}")
+                if len(perms) > 5:
+                    print(f"    {Fore.YELLOW}         ... and {len(perms) - 5} more{Style.RESET_ALL}")
+        
+        return all_permissions
+        
+    except Exception as e:
+        print(f"    {Fore.RED}❌ Error analyzing role permissions: {e}{Style.RESET_ALL}")
+        return []
+
+def is_service_linked_role(role):
+    """Check if a role is an AWS service-linked role that should be filtered out"""
+    role_name = role["RoleName"]
+    role_path = role.get("Path", "/")
+    
+    # Service-linked roles typically have these characteristics:
+    service_role_indicators = [
+        "AWSServiceRoleFor",
+        "aws-service-role",
+        "/service-role/",
+        "/aws-service-role/"
+    ]
+    
+    # Check role name
+    if any(indicator in role_name for indicator in service_role_indicators):
+        return True
+    
+    # Check role path
+    if any(indicator in role_path for indicator in service_role_indicators):
+        return True
+    
+    # Additional specific service role patterns
+    service_role_prefixes = [
+        "AWSServiceRole",
+        "service-role-",
+        "aws-",  # Be careful with this one, might be too broad
+    ]
+    
+    # Only check prefixes for very specific patterns to avoid false positives
+    if role_name.startswith("AWSServiceRole"):
+        return True
+    
+    return False
+
 def list_and_download_bucket(s3_client, bucket_name):
     """Recursively list and download all objects from a bucket"""
     print(f"\n{Fore.YELLOW}=== Processing Bucket: {bucket_name} ==={Style.RESET_ALL}")
@@ -1273,15 +1431,20 @@ if not session_token:
         print(f"{Fore.BLUE}Collecting all IAM roles...{Style.RESET_ALL}")
         while True:
             roles_response = iam_client.list_roles(Marker=marker) if marker else iam_client.list_roles()
-            all_roles.extend(roles_response["Roles"])
+            batch_roles = roles_response["Roles"]
+            
+            # Filter out service-linked roles
+            filtered_batch = [role for role in batch_roles if not is_service_linked_role(role)]
+            all_roles.extend(filtered_batch)
             
             if roles_response.get("IsTruncated"):
                 marker = roles_response["Marker"]
             else:
                 break
         
-        logger.info(f"Found {len(all_roles)} total roles")
-        print(f"{Fore.GREEN}Found {len(all_roles)} total roles{Style.RESET_ALL}")
+        total_roles = len(all_roles)
+        logger.info(f"Found {total_roles} user-assumable roles (filtered out service-linked roles)")
+        print(f"{Fore.GREEN}Found {total_roles} user-assumable roles (service-linked roles filtered out){Style.RESET_ALL}")
         
         # Strategy 1: Check trust policies for potential matches
         print(f"\n{Fore.BLUE}Strategy 1: Analyzing trust policies...{Style.RESET_ALL}")
@@ -1340,7 +1503,13 @@ if not session_token:
                 
                 # Try to assume every role
                 try:
+                    # FIRST: Analyze the role's permissions before attempting assumption
+                    print(f"\n{Fore.BLUE}  🔍 Analyzing role '{role_name}' before assumption attempt...{Style.RESET_ALL}")
+                    role_permissions = analyze_role_permissions(iam_client, role_name)
+                    
                     session_name = f"SecurityTest-{username if username else 'Unknown'}-{role_name[:20]}"
+                    print(f"    {Fore.YELLOW}🎲 Attempting to assume role...{Style.RESET_ALL}")
+                    
                     assume_response = sts_client.assume_role(
                         RoleArn=role_arn,
                         RoleSessionName=session_name
@@ -1349,6 +1518,7 @@ if not session_token:
                     # Success!
                     print(f"\n{Fore.GREEN}🎉 SUCCESS: Assumed role '{role_name}'!{Style.RESET_ALL}")
                     print(f" {Fore.CYAN}- Role ARN: {role_arn}{Style.RESET_ALL}")
+                    print(f" {Fore.MAGENTA}- This role grants {len(set(role_permissions))} unique permissions{Style.RESET_ALL}")
                     
                     credentials = assume_response["Credentials"]
                     print(f" {Fore.YELLOW}📋 Temporary session credentials:{Style.RESET_ALL}")
@@ -1360,7 +1530,8 @@ if not session_token:
                     successful_roles.append({
                         'role_name': role_name,
                         'role_arn': role_arn,
-                        'credentials': credentials
+                        'credentials': credentials,
+                        'permissions': role_permissions
                     })
                     
                     logger.success(f"Successfully assumed role: {role_name}")
@@ -1380,12 +1551,13 @@ if not session_token:
                 
                 attempt_pbar.update(1)
         
-        # Summary
-        print(f"\n{Fore.CYAN}📊 Role Assumption Summary:{Style.RESET_ALL}")
-        print(f" {Fore.BLUE}• Total roles analyzed: {len(all_roles)}{Style.RESET_ALL}")
-        print(f" {Fore.YELLOW}• Roles with matching trust policies: {len(matching_roles)}{Style.RESET_ALL}")
-        print(f" {Fore.RED}• Roles attempted: {len(attempted_roles)}{Style.RESET_ALL}")
-        print(f" {Fore.GREEN}• Successfully assumed roles: {len(successful_roles)}{Style.RESET_ALL}")
+        # 
+        credentials = assume_response["Credentials"]
+        print(f" {Fore.YELLOW}📋 Temporary session credentials:{Style.RESET_ALL}")
+        print(f" {Fore.CYAN}  - AccessKeyId: {credentials['AccessKeyId']}{Style.RESET_ALL}")
+        print(f" {Fore.CYAN}  - SecretAccessKey: {credentials['SecretAccessKey']}{Style.RESET_ALL}")
+        print(f" {Fore.CYAN}  - SessionToken: {credentials['SessionToken']}{Style.RESET_ALL}")
+        print(f" {Fore.CYAN}  - Expiration: {credentials['Expiration']}{Style.RESET_ALL}")
         
         if successful_roles:
             print(f"\n{Fore.GREEN}🎯 Successfully assumed roles:{Style.RESET_ALL}")
@@ -1401,6 +1573,8 @@ if not session_token:
                 for role_name in matching_roles:
                     print(f" {Fore.YELLOW}• {role_name}{Style.RESET_ALL}")
 
+        print(f"\n{Fore.BLUE}ℹ️  Note: AWS service-linked roles (AWSServiceRoleFor*, /aws-service-role/, etc.) were filtered out{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}   These roles are managed by AWS services and cannot be assumed by users.{Style.RESET_ALL}")
             
     except Exception as e:
         error_msg = f"Error while listing/analyzing roles: {e}"

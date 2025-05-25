@@ -571,6 +571,254 @@ def analyze_beanstalk_in_region(beanstalk_client, region):
         print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
         return 0, 0, 0
 
+def analyze_sns_topics_in_region(sns_client, region):
+    """Analyze SNS topics in a specific region"""
+    topics_found = 0
+    subscribed_count = 0
+    
+    try:
+        print(f"\n{Fore.BLUE}📡 Analyzing SNS topics in {region}...{Style.RESET_ALL}")
+        logger.info(f"Starting SNS topic analysis in region: {region}")
+        
+        # List all SNS topics
+        paginator = sns_client.get_paginator('list_topics')
+        topics = []
+        
+        for page in paginator.paginate():
+            topics.extend(page.get('Topics', []))
+        
+        if not topics:
+            print(f"  {Fore.YELLOW}No SNS topics found in {region}{Style.RESET_ALL}")
+            logger.info(f"No SNS topics found in region: {region}")
+            return 0, 0
+        
+        topics_found = len(topics)
+        print(f"  {Fore.GREEN}Found {topics_found} SNS topic(s) in {region}{Style.RESET_ALL}")
+        logger.info(f"Found {topics_found} SNS topics in region: {region}")
+        
+        # Analyze each topic
+        for i, topic in enumerate(topics, 1):
+            topic_arn = topic['TopicArn']
+            topic_name = topic_arn.split(':')[-1]
+            
+            print(f"\n  {Fore.CYAN}[{i}/{topics_found}] Topic: {topic_name}{Style.RESET_ALL}")
+            print(f"    {Fore.MAGENTA}ARN: {topic_arn}{Style.RESET_ALL}")
+            
+            try:
+                # Get topic attributes
+                attributes = sns_client.get_topic_attributes(TopicArn=topic_arn)
+                attrs = attributes.get('Attributes', {})
+                
+                print(f"    {Fore.BLUE}Topic Details:{Style.RESET_ALL}")
+                print(f"      Display Name: {attrs.get('DisplayName', 'N/A')}")
+                print(f"      Owner: {attrs.get('Owner', 'N/A')}")
+                print(f"      Subscriptions Confirmed: {attrs.get('SubscriptionsConfirmed', 'N/A')}")
+                print(f"      Subscriptions Pending: {attrs.get('SubscriptionsPending', 'N/A')}")
+                print(f"      Subscriptions Deleted: {attrs.get('SubscriptionsDeleted', 'N/A')}")
+                print(f"      Policy: {attrs.get('Policy', 'N/A')[:100]}{'...' if len(attrs.get('Policy', '')) > 100 else ''}")
+                
+                # Get subscriptions
+                try:
+                    subs_paginator = sns_client.get_paginator('list_subscriptions_by_topic')
+                    subscriptions = []
+                    
+                    for sub_page in subs_paginator.paginate(TopicArn=topic_arn):
+                        subscriptions.extend(sub_page.get('Subscriptions', []))
+                    
+                    if subscriptions:
+                        print(f"    {Fore.YELLOW}Existing Subscriptions ({len(subscriptions)}):{Style.RESET_ALL}")
+                        for sub in subscriptions:
+                            protocol = sub.get('Protocol', 'unknown')
+                            endpoint = sub.get('Endpoint', 'unknown')
+                            # Mask email for privacy in logs
+                            if protocol == 'email':
+                                masked_endpoint = endpoint[:3] + '***@' + endpoint.split('@')[-1] if '@' in endpoint else endpoint
+                                print(f"      - {protocol}: {masked_endpoint}")
+                            else:
+                                print(f"      - {protocol}: {endpoint}")
+                    else:
+                        print(f"    {Fore.YELLOW}No existing subscriptions{Style.RESET_ALL}")
+                        
+                except Exception as e:
+                    print(f"    {Fore.RED}❌ Error getting subscriptions: {e}{Style.RESET_ALL}")
+                    logger.error(f"Error getting subscriptions for {topic_arn}: {e}")
+                
+                # Log topic details
+                logger.info(f"Topic analyzed: {topic_name} - Confirmed subs: {attrs.get('SubscriptionsConfirmed', 'N/A')}")
+                
+            except Exception as e:
+                print(f"    {Fore.RED}❌ Error getting topic attributes: {e}{Style.RESET_ALL}")
+                logger.error(f"Error getting attributes for topic {topic_arn}: {e}")
+            
+            # Ask user if they want to subscribe
+            subscribe_choice = input(f"\n    {Fore.GREEN}Do you want to subscribe to topic '{topic_name}'? (y/N): {Style.RESET_ALL}").strip().lower()
+            
+            if subscribe_choice in ['y', 'yes']:
+                email = input(f"    {Fore.CYAN}Enter email address to subscribe: {Style.RESET_ALL}").strip()
+                
+                if email and '@' in email:
+                    try:
+                        response = sns_client.subscribe(
+                            TopicArn=topic_arn,
+                            Protocol='email',
+                            Endpoint=email
+                        )
+                        
+                        subscription_arn = response.get('SubscriptionArn', 'pending confirmation')
+                        print(f"    {Fore.GREEN}✅ Subscription request sent successfully!{Style.RESET_ALL}")
+                        print(f"    {Fore.BLUE}Subscription ARN: {subscription_arn}{Style.RESET_ALL}")
+                        print(f"    {Fore.YELLOW}⚠️  Check your email to confirm the subscription{Style.RESET_ALL}")
+                        
+                        subscribed_count += 1
+                        logger.info(f"Successfully subscribed {email} to topic {topic_name}")
+                        
+                    except Exception as e:
+                        error_msg = f"Error subscribing to topic {topic_name}: {e}"
+                        print(f"    {Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+                        logger.error(error_msg)
+                else:
+                    print(f"    {Fore.RED}❌ Invalid email address{Style.RESET_ALL}")
+            
+            print()  # Add spacing between topics
+            
+    except Exception as e:
+        error_msg = f"Error analyzing SNS topics in region {region}: {e}"
+        logger.error(error_msg)
+        print(f"  {Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+        return 0, 0
+    
+    return topics_found, subscribed_count
+
+
+def analyze_sns_topics(session, current_region):
+    """Comprehensive SNS topics analysis across regions"""
+    print(f"\n{Fore.YELLOW}=== SNS Topics Analysis ==={Style.RESET_ALL}")
+    logger.info("Starting SNS topics analysis")
+    
+    # Ask user about region scanning
+    search_all_regions = input(f"{Fore.GREEN}Search SNS topics in all regions? (y/n) [default: current region only]: {Style.RESET_ALL}").strip().lower()
+    
+    regions_to_scan = []
+    if search_all_regions in ['y', 'yes']:
+        print(f"{Fore.BLUE}Getting all available regions...{Style.RESET_ALL}")
+        try:
+            ec2_client = session.client('ec2', region_name=current_region)
+            regions_response = ec2_client.describe_regions()
+            regions_to_scan = [region['RegionName'] for region in regions_response['Regions']]
+            print(f"{Fore.GREEN}Will scan {len(regions_to_scan)} regions: {', '.join(regions_to_scan)}{Style.RESET_ALL}")
+            logger.info(f"Scanning SNS topics in all {len(regions_to_scan)} regions")
+        except Exception as e:
+            print(f"{Fore.RED}❌ Error getting regions, falling back to current region: {e}{Style.RESET_ALL}")
+            regions_to_scan = [current_region]
+    else:
+        regions_to_scan = [current_region]
+        print(f"{Fore.CYAN}Scanning SNS topics in current region: {current_region}{Style.RESET_ALL}")
+        logger.info(f"Scanning SNS topics in current region only: {current_region}")
+    
+    total_topics_found = 0
+    total_subscribed = 0
+    regions_with_topics = 0
+    
+    # Process each region
+    for region in regions_to_scan:
+        print(f"\n{Fore.MAGENTA}🌍 Scanning region: {region}{Style.RESET_ALL}")
+        logger.info(f"Scanning SNS topics in region: {region}")
+        
+        try:
+            sns_client = session.client("sns", region_name=region)
+            region_topics, region_subscribed = analyze_sns_topics_in_region(sns_client, region)
+            
+            if region_topics > 0:
+                regions_with_topics += 1
+                
+            total_topics_found += region_topics
+            total_subscribed += region_subscribed
+            
+        except Exception as e:
+            error_msg = f"Error scanning region {region}: {e}"
+            logger.error(error_msg)
+            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+    
+    # Final summary
+    print(f"\n{Fore.GREEN}🌍 Multi-Region SNS Summary:{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Regions scanned: {len(regions_to_scan)}{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Regions with topics: {regions_with_topics}{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Total topics found: {total_topics_found}{Style.RESET_ALL}")
+    print(f"  {Fore.GREEN}Total subscriptions made: {total_subscribed}{Style.RESET_ALL}")
+    
+    if total_subscribed > 0:
+        print(f"  {Fore.YELLOW}⚠️  Remember to check your email(s) to confirm subscriptions!{Style.RESET_ALL}")
+    
+    logger.info(f"SNS analysis complete across {len(regions_to_scan)} regions: {total_topics_found} topics found, {total_subscribed} subscriptions made")
+
+
+# Additional function to list all SNS subscriptions (useful for monitoring)
+def list_all_sns_subscriptions(session, current_region):
+    """List all SNS subscriptions across regions"""
+    print(f"\n{Fore.YELLOW}=== All SNS Subscriptions ==={Style.RESET_ALL}")
+    logger.info("Listing all SNS subscriptions")
+    
+    # Ask user about region scanning
+    search_all_regions = input(f"{Fore.GREEN}List subscriptions in all regions? (y/n) [default: current region only]: {Style.RESET_ALL}").strip().lower()
+    
+    regions_to_scan = []
+    if search_all_regions in ['y', 'yes']:
+        try:
+            ec2_client = session.client('ec2', region_name=current_region)
+            regions_response = ec2_client.describe_regions()
+            regions_to_scan = [region['RegionName'] for region in regions_response['Regions']]
+        except Exception as e:
+            print(f"{Fore.RED}❌ Error getting regions: {e}{Style.RESET_ALL}")
+            regions_to_scan = [current_region]
+    else:
+        regions_to_scan = [current_region]
+    
+    total_subscriptions = 0
+    
+    for region in regions_to_scan:
+        print(f"\n{Fore.MAGENTA}🌍 Region: {region}{Style.RESET_ALL}")
+        
+        try:
+            sns_client = session.client("sns", region_name=region)
+            
+            paginator = sns_client.get_paginator('list_subscriptions')
+            subscriptions = []
+            
+            for page in paginator.paginate():
+                subscriptions.extend(page.get('Subscriptions', []))
+            
+            if subscriptions:
+                print(f"  {Fore.GREEN}Found {len(subscriptions)} subscription(s){Style.RESET_ALL}")
+                
+                for i, sub in enumerate(subscriptions, 1):
+                    topic_arn = sub.get('TopicArn', 'N/A')
+                    topic_name = topic_arn.split(':')[-1] if topic_arn != 'N/A' else 'N/A'
+                    protocol = sub.get('Protocol', 'N/A')
+                    endpoint = sub.get('Endpoint', 'N/A')
+                    
+                    # Mask sensitive info
+                    if protocol == 'email' and '@' in endpoint:
+                        masked_endpoint = endpoint[:3] + '***@' + endpoint.split('@')[-1]
+                    else:
+                        masked_endpoint = endpoint
+                    
+                    print(f"    {Fore.CYAN}[{i}] Topic: {topic_name}{Style.RESET_ALL}")
+                    print(f"        Protocol: {protocol}")
+                    print(f"        Endpoint: {masked_endpoint}")
+                    print(f"        Status: {sub.get('SubscriptionArn', 'Pending')}")
+                    print()
+                
+                total_subscriptions += len(subscriptions)
+            else:
+                print(f"  {Fore.YELLOW}No subscriptions found{Style.RESET_ALL}")
+                
+        except Exception as e:
+            print(f"  {Fore.RED}❌ Error listing subscriptions: {e}{Style.RESET_ALL}")
+            logger.error(f"Error listing subscriptions in region {region}: {e}")
+    
+    print(f"\n{Fore.GREEN}Total subscriptions across all regions: {total_subscriptions}{Style.RESET_ALL}")
+    logger.info(f"Total SNS subscriptions found: {total_subscriptions}")
+
 def list_and_download_bucket(s3_client, bucket_name):
     """Recursively list and download all objects from a bucket"""
     print(f"\n{Fore.YELLOW}=== Processing Bucket: {bucket_name} ==={Style.RESET_ALL}")
@@ -688,6 +936,7 @@ try:
 
     # Initialize clients
     s3_client = session.client("s3")
+    sns_client = session.client("sns")
     sts_client = session.client("sts")
     secrets_client = session.client("secretsmanager")
     iam_client = session.client("iam")
@@ -958,8 +1207,37 @@ except Exception as e:
     logger.error(error_msg)
     print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
 
-analyze_lambda_functions(session, region)
-analyze_beanstalk_environments(session, region)
+print(f"\n{Fore.YELLOW}=== Optional Analysis Options ==={Style.RESET_ALL}")
+print(f"{Fore.CYAN}1. Analyze Lambda Functions{Style.RESET_ALL}")
+print(f"{Fore.CYAN}2. Analyze SNS Topics{Style.RESET_ALL}") 
+print(f"{Fore.CYAN}3. List All SNS Subscriptions{Style.RESET_ALL}")
+print(f"{Fore.CYAN}4. Analyze Beanstalk Environments{Style.RESET_ALL}")
+print(f"{Fore.RED}5. Run Full Scan{Style.RESET_ALL}")
+print(f"{Fore.CYAN}Press Enter to skip optional analyses{Style.RESET_ALL}")
+
+choice = input(f"{Fore.GREEN}Enter your choice (1-3) or press Enter to continue: {Style.RESET_ALL}").strip()
+
+if choice == "1":
+    analyze_lambda_functions(session, region)
+elif choice == "2":
+    analyze_sns_topics(session, region)
+elif choice == "3":
+    list_all_sns_subscriptions(session, region)
+elif choice == "4":
+    analyze_beanstalk_environments(session, region)
+elif choice == "5":
+    analyze_lambda_functions(session, region)
+    analyze_sns_topics(session, region)
+    list_all_sns_subscriptions(session, region)
+    analyze_beanstalk_environments(session, region)
+elif choice == "":
+    print(f"{Fore.BLUE}Skipping optional analyses...{Style.RESET_ALL}")
+else:
+    print(f"{Fore.YELLOW}Invalid choice, continuing with main flow...{Style.RESET_ALL}")
+
+# Program ALWAYS continues here regardless of choice above
+print(f"\n{Fore.BLUE}Continuing with main security assessment...{Style.RESET_ALL}")
+
 
 # Role discovery and assumption (only for permanent credentials to avoid confusion)
 if not session_token:

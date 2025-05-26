@@ -1070,6 +1070,15 @@ def list_and_download_bucket(s3_client, bucket_name):
         print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
 
 # Header
+# -*- coding: utf-8 -*-
+print("""
+ ██████╗██╗      ██████╗ ██╗   ██╗██████╗ ████████╗ █████╗ ██████╗ 
+██╔════╝██║     ██╔═══██╗██║   ██║██╔══██╗╚══██╔══╝██╔══██╗██╔══██╗
+██║     ██║     ██║   ██║██║   ██║██║  ██║   ██║   ███████║██████╔╝
+██║     ██║     ██║   ██║██║   ██║██║  ██║   ██║   ██╔══██║██╔═══╝ 
+╚██████╗███████╗╚██████╔╝╚██████╔╝██████╔╝   ██║   ██║  ██║██║     
+ ╚═════╝╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝╚═╝     
+""")
 print(f"{Fore.CYAN}{Back.BLACK}")
 print("=" * 60)
 print("    AWS Security Assessment & Data Exfiltration Tool")

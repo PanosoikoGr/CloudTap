@@ -10,6 +10,7 @@ import sys
 import zipfile
 import requests
 from urllib.parse import urlparse
+import base64
 
 AWS_REGIONS = [
     'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
@@ -332,6 +333,370 @@ def analyze_lambda_functions_in_region(lambda_client, lambda_dir, region):
         logger.error(error_msg)
         print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
         return 0, 0
+
+def analyze_ec2_instances(session, current_region):
+    """Comprehensive EC2 instance analysis for penetration testing"""
+    print(f"\n{Fore.YELLOW}=== EC2 Instance Analysis ==={Style.RESET_ALL}")
+    logger.info("Starting EC2 instance analysis")
+    
+    # Ask user about region scanning
+    search_all_regions = input(f"{Fore.GREEN}Search EC2 instances in all regions? (y/n) [default: current region only]: {Style.RESET_ALL}").strip().lower()
+    
+    regions_to_scan = []
+    if search_all_regions in ['y', 'yes']:
+        print(f"{Fore.BLUE}Getting all available regions...{Style.RESET_ALL}")
+        try:
+            ec2_client = session.client('ec2', region_name=current_region)
+            regions_response = ec2_client.describe_regions()
+            regions_to_scan = [region['RegionName'] for region in regions_response['Regions']]
+            print(f"{Fore.GREEN}Will scan {len(regions_to_scan)} regions: {', '.join(regions_to_scan)}{Style.RESET_ALL}")
+            logger.info(f"Scanning EC2 instances in all {len(regions_to_scan)} regions")
+        except Exception as e:
+            print(f"{Fore.RED}❌ Error getting regions dynamically: {e}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Falling back to hardcoded region list...{Style.RESET_ALL}")
+            # Same hardcoded region list as your original code
+            regions_to_scan = AWS_REGIONS
+    else:
+        regions_to_scan = [current_region]
+        print(f"{Fore.CYAN}Scanning EC2 instances in current region: {current_region}{Style.RESET_ALL}")
+        logger.info(f"Scanning EC2 instances in current region only: {current_region}")
+    
+    total_instances = 0
+    total_running_instances = 0
+    total_volumes = 0
+    total_security_groups = 0
+    
+    # Process each region
+    for region in regions_to_scan:
+        print(f"\n{Fore.MAGENTA}🌍 Scanning region: {region}{Style.RESET_ALL}")
+        logger.info(f"Scanning EC2 instances in region: {region}")
+        
+        try:
+            ec2_client = session.client("ec2", region_name=region)
+            region_instances, region_running, region_volumes, region_sgs = analyze_ec2_in_region(ec2_client, region)
+            total_instances += region_instances
+            total_running_instances += region_running
+            total_volumes += region_volumes
+            total_security_groups += region_sgs
+            
+        except Exception as e:
+            error_msg = f"Error scanning EC2 in region {region}: {e}"
+            logger.error(error_msg)
+            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+    
+    # Final summary
+    print(f"\n{Fore.GREEN}🌍 Multi-Region EC2 Summary:{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Regions scanned: {len(regions_to_scan)}{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Total instances found: {total_instances}{Style.RESET_ALL}")
+    print(f"  {Fore.GREEN}Running instances: {total_running_instances}{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Total EBS volumes: {total_volumes}{Style.RESET_ALL}")
+    print(f"  {Fore.YELLOW}Unique security groups: {total_security_groups}{Style.RESET_ALL}")
+    
+    logger.info(f"EC2 analysis complete across {len(regions_to_scan)} regions: {total_instances} instances ({total_running_instances} running), {total_volumes} volumes, {total_security_groups} security groups")
+
+def analyze_ec2_in_region(ec2_client, region):
+    """Analyze EC2 instances in a specific region"""
+    try:
+        # Get all instances
+        print(f"{Fore.BLUE}Discovering EC2 instances in {region}...{Style.RESET_ALL}")
+        paginator = ec2_client.get_paginator('describe_instances')
+        
+        instances = []
+        for page in paginator.paginate():
+            for reservation in page['Reservations']:
+                instances.extend(reservation['Instances'])
+        
+        if not instances:
+            print(f"{Fore.YELLOW}No EC2 instances found in {region}.{Style.RESET_ALL}")
+            logger.info(f"No EC2 instances found in {region}")
+            return 0, 0, 0, 0
+        
+        print(f"{Fore.GREEN}Found {len(instances)} EC2 instances in {region}{Style.RESET_ALL}")
+        logger.info(f"Found {len(instances)} EC2 instances in {region}")
+        
+        running_instances = 0
+        total_volumes = 0
+        security_groups_seen = set()
+        
+        # Process each instance
+        for i, instance in enumerate(instances, 1):
+            instance_id = instance['InstanceId']
+            instance_state = instance['State']['Name']
+            
+            print(f"\n{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}🖥️ Instance {i}/{len(instances)}: {instance_id}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
+            
+            # Basic instance information
+            print(f"{Fore.MAGENTA}📋 Basic Information:{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}Instance ID: {instance_id}{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}State: {instance_state}{Style.RESET_ALL}")
+            
+            if instance_state == 'running':
+                running_instances += 1
+                print(f"  {Fore.RED}🔴 RUNNING - ACTIVE TARGET{Style.RESET_ALL}")
+            
+            print(f"  {Fore.GREEN}Instance Type: {instance.get('InstanceType', 'N/A')}{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}AMI ID: {instance.get('ImageId', 'N/A')}{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}Key Pair: {instance.get('KeyName', 'None')}{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}Launch Time: {instance.get('LaunchTime', 'N/A')}{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}Platform: {instance.get('Platform', 'Linux/Unix')}{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}Architecture: {instance.get('Architecture', 'N/A')}{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}VPC ID: {instance.get('VpcId', 'Classic EC2')}{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}Subnet ID: {instance.get('SubnetId', 'N/A')}{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}Availability Zone: {instance.get('Placement', {}).get('AvailabilityZone', 'N/A')}{Style.RESET_ALL}")
+            
+            # Network information (CRITICAL for pentesting)
+            print(f"\n{Fore.RED}🌐 Network Information (PENTESTING TARGETS):{Style.RESET_ALL}")
+            
+            # Private IP
+            private_ip = instance.get('PrivateIpAddress')
+            if private_ip:
+                print(f"  {Fore.RED}Private IP: {private_ip}{Style.RESET_ALL}")
+                logger.warning(f"Instance {instance_id} private IP: {private_ip}")
+            
+            # Public IP
+            public_ip = instance.get('PublicIpAddress')
+            if public_ip:
+                print(f"  {Fore.RED}🎯 PUBLIC IP: {public_ip} (EXTERNAL TARGET){Style.RESET_ALL}")
+                logger.warning(f"Instance {instance_id} public IP: {public_ip}")
+            else:
+                print(f"  {Fore.YELLOW}Public IP: None (Internal only){Style.RESET_ALL}")
+            
+            # Private DNS
+            private_dns = instance.get('PrivateDnsName')
+            if private_dns:
+                print(f"  {Fore.CYAN}Private DNS: {private_dns}{Style.RESET_ALL}")
+            
+            # Public DNS
+            public_dns = instance.get('PublicDnsName')
+            if public_dns:
+                print(f"  {Fore.RED}🎯 Public DNS: {public_dns}{Style.RESET_ALL}")
+            
+            # Network interfaces
+            network_interfaces = instance.get('NetworkInterfaces', [])
+            if network_interfaces:
+                print(f"\n{Fore.BLUE}🔌 Network Interfaces ({len(network_interfaces)}):{Style.RESET_ALL}")
+                for ni in network_interfaces:
+                    ni_id = ni.get('NetworkInterfaceId')
+                    ni_private_ip = ni.get('PrivateIpAddress')
+                    ni_public_ip = ni.get('Association', {}).get('PublicIp')
+                    
+                    print(f"    {Fore.CYAN}Interface: {ni_id}{Style.RESET_ALL}")
+                    print(f"      {Fore.GREEN}Private IP: {ni_private_ip}{Style.RESET_ALL}")
+                    if ni_public_ip:
+                        print(f"      {Fore.RED}🎯 Public IP: {ni_public_ip}{Style.RESET_ALL}")
+                    
+                    # Secondary private IPs
+                    secondary_ips = ni.get('PrivateIpAddresses', [])
+                    if len(secondary_ips) > 1:
+                        print(f"      {Fore.YELLOW}Secondary IPs:{Style.RESET_ALL}")
+                        for sec_ip in secondary_ips[1:]:  # Skip primary
+                            print(f"        {Fore.YELLOW}• {sec_ip.get('PrivateIpAddress')}{Style.RESET_ALL}")
+            
+            # Security Groups (CRITICAL for attack surface analysis)
+            security_groups = instance.get('SecurityGroups', [])
+            if security_groups:
+                print(f"\n{Fore.RED}🛡️ Security Groups (ATTACK SURFACE):{Style.RESET_ALL}")
+                for sg in security_groups:
+                    sg_id = sg['GroupId']
+                    sg_name = sg['GroupName']
+                    security_groups_seen.add(sg_id)
+                    print(f"  {Fore.RED}• {sg_name} ({sg_id}){Style.RESET_ALL}")
+                
+                # Get detailed security group rules
+                try:
+                    sg_details = ec2_client.describe_security_groups(
+                        GroupIds=[sg['GroupId'] for sg in security_groups]
+                    )
+                    
+                    for sg_detail in sg_details['SecurityGroups']:
+                        sg_id = sg_detail['GroupId']
+                        sg_name = sg_detail['GroupName']
+                        
+                        print(f"\n    {Fore.YELLOW}🔍 {sg_name} ({sg_id}) Rules:{Style.RESET_ALL}")
+                        
+                        # Inbound rules
+                        inbound_rules = sg_detail.get('IpPermissions', [])
+                        if inbound_rules:
+                            print(f"      {Fore.RED}📥 Inbound (POTENTIAL ENTRY POINTS):{Style.RESET_ALL}")
+                            for rule in inbound_rules:
+                                protocol = rule.get('IpProtocol', 'Unknown')
+                                from_port = rule.get('FromPort', 'All')
+                                to_port = rule.get('ToPort', 'All')
+                                
+                                port_info = f"{from_port}" if from_port == to_port else f"{from_port}-{to_port}"
+                                if from_port == 'All':
+                                    port_info = "All Ports"
+                                
+                                # Check sources
+                                ip_ranges = rule.get('IpRanges', [])
+                                for ip_range in ip_ranges:
+                                    cidr = ip_range['CidrIp']
+                                    description = ip_range.get('Description', '')
+                                    if cidr == '0.0.0.0/0':
+                                        print(f"        {Fore.RED}🚨 {protocol.upper()}:{port_info} <- 0.0.0.0/0 (INTERNET) {description}{Style.RESET_ALL}")
+                                    else:
+                                        print(f"        {Fore.YELLOW}• {protocol.upper()}:{port_info} <- {cidr} {description}{Style.RESET_ALL}")
+                                
+                                # Referenced security groups
+                                user_id_group_pairs = rule.get('UserIdGroupPairs', [])
+                                for group_pair in user_id_group_pairs:
+                                    ref_sg = group_pair.get('GroupId', 'Unknown')
+                                    print(f"        {Fore.CYAN}• {protocol.upper()}:{port_info} <- SG:{ref_sg}{Style.RESET_ALL}")
+                        
+                        # Outbound rules
+                        outbound_rules = sg_detail.get('IpPermissionsEgress', [])
+                        if outbound_rules:
+                            print(f"      {Fore.BLUE}📤 Outbound:{Style.RESET_ALL}")
+                            for rule in outbound_rules[:3]:  # Show first 3 to avoid clutter
+                                protocol = rule.get('IpProtocol', 'Unknown')
+                                from_port = rule.get('FromPort', 'All')
+                                to_port = rule.get('ToPort', 'All')
+                                
+                                port_info = f"{from_port}" if from_port == to_port else f"{from_port}-{to_port}"
+                                if from_port == 'All':
+                                    port_info = "All Ports"
+                                
+                                ip_ranges = rule.get('IpRanges', [])
+                                for ip_range in ip_ranges[:2]:  # Limit output
+                                    cidr = ip_range['CidrIp']
+                                    if cidr == '0.0.0.0/0':
+                                        print(f"        {Fore.BLUE}• {protocol.upper()}:{port_info} -> 0.0.0.0/0 (INTERNET){Style.RESET_ALL}")
+                                    else:
+                                        print(f"        {Fore.CYAN}• {protocol.upper()}:{port_info} -> {cidr}{Style.RESET_ALL}")
+                            
+                            if len(outbound_rules) > 3:
+                                print(f"        {Fore.YELLOW}... and {len(outbound_rules) - 3} more outbound rules{Style.RESET_ALL}")
+                
+                except Exception as e:
+                    logger.error(f"Error getting security group details: {e}")
+            
+            # EBS Volumes (for data exfiltration opportunities)
+            block_devices = instance.get('BlockDeviceMappings', [])
+            if block_devices:
+                print(f"\n{Fore.BLUE}💾 EBS Volumes (DATA STORAGE):{Style.RESET_ALL}")
+                total_volumes += len(block_devices)
+                
+                for bd in block_devices:
+                    device_name = bd.get('DeviceName', 'Unknown')
+                    ebs = bd.get('Ebs', {})
+                    volume_id = ebs.get('VolumeId', 'N/A')
+                    
+                    print(f"  {Fore.CYAN}Device: {device_name}{Style.RESET_ALL}")
+                    print(f"    {Fore.GREEN}Volume ID: {volume_id}{Style.RESET_ALL}")
+                    print(f"    {Fore.GREEN}Delete on Termination: {ebs.get('DeleteOnTermination', 'N/A')}{Style.RESET_ALL}")
+                    
+                    # Get volume details
+                    try:
+                        if volume_id != 'N/A':
+                            volume_details = ec2_client.describe_volumes(VolumeIds=[volume_id])
+                            for volume in volume_details['Volumes']:
+                                size = volume.get('Size', 'Unknown')
+                                volume_type = volume.get('VolumeType', 'Unknown')
+                                encrypted = volume.get('Encrypted', False)
+                                
+                                print(f"    {Fore.GREEN}Size: {size} GB{Style.RESET_ALL}")
+                                print(f"    {Fore.GREEN}Type: {volume_type}{Style.RESET_ALL}")
+                                
+                                if encrypted:
+                                    print(f"    {Fore.YELLOW}🔐 Encrypted: Yes{Style.RESET_ALL}")
+                                else:
+                                    print(f"    {Fore.RED}🔓 Encrypted: No (UNPROTECTED DATA){Style.RESET_ALL}")
+                                    logger.warning(f"Unencrypted volume {volume_id} on instance {instance_id}")
+                                
+                                # Snapshots
+                                snapshot_id = volume.get('SnapshotId')
+                                if snapshot_id:
+                                    print(f"    {Fore.CYAN}Snapshot ID: {snapshot_id}{Style.RESET_ALL}")
+                    except Exception as e:
+                        logger.debug(f"Error getting volume details for {volume_id}: {e}")
+            
+            # Tags (may contain sensitive information)
+            tags = instance.get('Tags', [])
+            if tags:
+                print(f"\n{Fore.YELLOW}🏷️ Tags (POTENTIAL SENSITIVE INFO):{Style.RESET_ALL}")
+                for tag in tags:
+                    key = tag.get('Key', '')
+                    value = tag.get('Value', '')
+                    
+                    # Highlight potentially sensitive tags
+                    if any(keyword in key.lower() for keyword in ['password', 'secret', 'key', 'token', 'credential']):
+                        print(f"  {Fore.RED}🚨 {key}: {value} (SENSITIVE){Style.RESET_ALL}")
+                        logger.warning(f"Potentially sensitive tag on {instance_id}: {key}={value}")
+                    elif key.lower() in ['name', 'environment', 'project', 'owner']:
+                        print(f"  {Fore.CYAN}{key}: {value}{Style.RESET_ALL}")
+                    else:
+                        print(f"  {Fore.GREEN}{key}: {value}{Style.RESET_ALL}")
+            
+            # IAM Instance Profile (privilege escalation opportunities)
+            iam_instance_profile = instance.get('IamInstanceProfile')
+            if iam_instance_profile:
+                profile_arn = iam_instance_profile.get('Arn', 'N/A')
+                print(f"\n{Fore.RED}🎭 IAM Instance Profile (PRIVILEGE ESCALATION):{Style.RESET_ALL}")
+                print(f"  {Fore.RED}Profile ARN: {profile_arn}{Style.RESET_ALL}")
+                logger.warning(f"Instance {instance_id} has IAM profile: {profile_arn}")
+            
+            # User Data (often contains sensitive bootstrapping info)
+            try:
+                user_data_response = ec2_client.describe_instance_attribute(
+                    InstanceId=instance_id,
+                    Attribute='userData'
+                )
+                user_data = user_data_response.get('UserData', {}).get('Value')
+                if user_data:
+                    print(f"\n{Fore.RED}📝 User Data (BOOTSTRAP SECRETS):{Style.RESET_ALL}")
+                    # Decode base64 user data
+                    import base64
+                    try:
+                        decoded_user_data = base64.b64decode(user_data).decode('utf-8')
+                        # Show first few lines
+                        lines = decoded_user_data.split('\n')[:5]
+                        for line in lines:
+                            if line.strip():
+                                print(f"  {Fore.RED}{line[:100]}{'...' if len(line) > 100 else ''}{Style.RESET_ALL}")
+                        if len(decoded_user_data.split('\n')) > 5:
+                            print(f"  {Fore.YELLOW}... (truncated, {len(decoded_user_data)} total characters){Style.RESET_ALL}")
+                        logger.warning(f"Instance {instance_id} has user data (potential secrets)")
+                    except Exception as e:
+                        print(f"  {Fore.YELLOW}Base64 encoded data present (decode manually){Style.RESET_ALL}")
+            except Exception as e:
+                logger.debug(f"Error getting user data for {instance_id}: {e}")
+            
+            # System information summary for running instances
+            if instance_state == 'running':
+                print(f"\n{Fore.RED}🎯 PENETRATION TESTING SUMMARY:{Style.RESET_ALL}")
+                if public_ip:
+                    print(f"  {Fore.RED}• Primary Target: {public_ip} (External){Style.RESET_ALL}")
+                if private_ip:
+                    print(f"  {Fore.YELLOW}• Internal Target: {private_ip} (Pivot point){Style.RESET_ALL}")
+                
+                # Common ports to check based on platform
+                platform = instance.get('Platform', '').lower()
+                if 'windows' in platform:
+                    print(f"  {Fore.CYAN}• Suggested ports: 3389 (RDP), 445 (SMB), 5985 (WinRM){Style.RESET_ALL}")
+                else:
+                    print(f"  {Fore.CYAN}• Suggested ports: 22 (SSH), 80 (HTTP), 443 (HTTPS){Style.RESET_ALL}")
+                
+                if instance.get('KeyName'):
+                    print(f"  {Fore.YELLOW}• SSH Key: {instance['KeyName']} (find private key){Style.RESET_ALL}")
+        
+        # Region summary
+        print(f"\n{Fore.GREEN}📊 {region} EC2 Summary:{Style.RESET_ALL}")
+        print(f"  {Fore.CYAN}Total instances: {len(instances)}{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}Running instances: {running_instances}{Style.RESET_ALL}")
+        print(f"  {Fore.CYAN}EBS volumes: {total_volumes}{Style.RESET_ALL}")
+        print(f"  {Fore.YELLOW}Security groups: {len(security_groups_seen)}{Style.RESET_ALL}")
+        
+        logger.info(f"Region {region} EC2 analysis complete: {len(instances)} instances ({running_instances} running), {total_volumes} volumes")
+        
+        return len(instances), running_instances, total_volumes, len(security_groups_seen)
+        
+    except Exception as e:
+        error_msg = f"Error during EC2 analysis in {region}: {e}"
+        logger.error(error_msg)
+        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+        return 0, 0, 0, 0
 
 def analyze_beanstalk_environments(session, current_region):
     """Comprehensive Elastic Beanstalk environment analysis"""
@@ -1397,7 +1762,8 @@ print(f"{Fore.CYAN}1. Analyze Lambda Functions{Style.RESET_ALL}")
 print(f"{Fore.CYAN}2. Analyze SNS Topics{Style.RESET_ALL}") 
 print(f"{Fore.CYAN}3. List All SNS Subscriptions{Style.RESET_ALL}")
 print(f"{Fore.CYAN}4. Analyze Beanstalk Environments{Style.RESET_ALL}")
-print(f"{Fore.RED}5. Run Full Scan{Style.RESET_ALL}")
+print(f"{Fore.CYAN}5. Analyze EC2 and EBS{Style.RESET_ALL}")
+print(f"{Fore.RED}6. Run Full Scan{Style.RESET_ALL}")
 print(f"{Fore.CYAN}Press Enter to skip optional analyses{Style.RESET_ALL}")
 
 choice = input(f"{Fore.GREEN}Enter your choice (1-5) or press Enter to continue: {Style.RESET_ALL}").strip()
@@ -1411,10 +1777,13 @@ elif choice == "3":
 elif choice == "4":
     analyze_beanstalk_environments(session, region)
 elif choice == "5":
+    analyze_ec2_instances(session, region)
+elif choice == "6":
     analyze_lambda_functions(session, region)
     analyze_sns_topics(session, region)
     list_all_sns_subscriptions(session, region)
     analyze_beanstalk_environments(session, region)
+    analyze_ec2_instances(session, region)
 elif choice == "":
     print(f"{Fore.BLUE}Skipping optional analyses...{Style.RESET_ALL}")
 else:

@@ -11,6 +11,7 @@ import zipfile
 import requests
 from urllib.parse import urlparse
 import base64
+import argparse
 
 AWS_REGIONS = [
     'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
@@ -26,6 +27,134 @@ init(autoreset=True)
 logger.remove()  # Remove default handler
 logger.add(sys.stdout, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>")
 logger.add("aws_security_assessment.log", rotation="10 MB", retention="7 days")
+
+def load_env_file(env_file_path=".env"):
+    """Load environment variables from .env file"""
+    if not os.path.exists(env_file_path):
+        return False
+    
+    try:
+        with open(env_file_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    os.environ[key] = value
+        return True
+    except Exception as e:
+        logger.error(f"Error loading .env file: {e}")
+        return False
+
+def get_aws_credentials_from_profile(profile_name):
+    """Get AWS credentials from AWS CLI profile or environment variables"""
+    credentials = {}
+    
+    try:
+        # First try to get from AWS CLI profile
+        if profile_name != "default":
+            session = boto3.Session(profile_name=profile_name)
+        else:
+            session = boto3.Session()
+            
+        # Get credentials from the session
+        creds = session.get_credentials()
+        
+        if creds:
+            credentials['access_key'] = creds.access_key
+            credentials['secret_key'] = creds.secret_key
+            credentials['session_token'] = creds.token
+            
+            # Get region from session
+            credentials['region'] = session.region_name or 'us-east-1'
+            
+            return credentials
+            
+    except ProfileNotFound:
+        print(f"{Fore.RED}❌ AWS profile '{profile_name}' not found{Style.RESET_ALL}")
+        
+    except Exception as e:
+        print(f"{Fore.RED}❌ Error loading profile '{profile_name}': {e}{Style.RESET_ALL}")
+    
+    # Fallback: try environment variables with profile-specific names
+    env_vars = [
+        f"AWS_ACCESS_KEY_ID_{profile_name.upper()}",
+        f"AWS_SECRET_ACCESS_KEY_{profile_name.upper()}",
+        f"AWS_SESSION_TOKEN_{profile_name.upper()}",
+        f"AWS_REGION_{profile_name.upper()}"
+    ]
+    
+    # Also try standard environment variables
+    if profile_name == "default":
+        env_vars.extend([
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY", 
+            "AWS_SESSION_TOKEN",
+            "AWS_REGION"
+        ])
+    
+    # Check environment variables
+    access_key = None
+    secret_key = None
+    session_token = None
+    region = None
+    
+    for var in env_vars:
+        if var.endswith('ACCESS_KEY_ID') and var in os.environ:
+            access_key = os.environ[var]
+        elif var.endswith('SECRET_ACCESS_KEY') and var in os.environ:
+            secret_key = os.environ[var]
+        elif var.endswith('SESSION_TOKEN') and var in os.environ:
+            session_token = os.environ[var]
+        elif var.endswith('REGION') and var in os.environ:
+            region = os.environ[var]
+    
+    if access_key and secret_key:
+        credentials['access_key'] = access_key
+        credentials['secret_key'] = secret_key
+        credentials['session_token'] = session_token
+        credentials['region'] = region or 'us-east-1'
+        return credentials
+    
+    return None
+
+def list_available_profiles():
+    """List available AWS profiles"""
+    profiles = []
+    
+    # Check AWS credentials file
+    aws_dir = Path.home() / '.aws'
+    credentials_file = aws_dir / 'credentials'
+    config_file = aws_dir / 'config'
+    
+    if credentials_file.exists():
+        try:
+            import configparser
+            config = configparser.ConfigParser()
+            config.read(credentials_file)
+            profiles.extend(config.sections())
+        except Exception as e:
+            logger.debug(f"Error reading credentials file: {e}")
+    
+    if config_file.exists():
+        try:
+            import configparser
+            config = configparser.ConfigParser()
+            config.read(config_file)
+            for section in config.sections():
+                if section.startswith('profile '):
+                    profile_name = section.replace('profile ', '')
+                    if profile_name not in profiles:
+                        profiles.append(profile_name)
+        except Exception as e:
+            logger.debug(f"Error reading config file: {e}")
+    
+    # Add default profile
+    if 'default' not in profiles:
+        profiles.insert(0, 'default')
+    
+    return profiles
 
 def custom_serializer(obj):
     if isinstance(obj, datetime):
@@ -45,6 +174,41 @@ def safe_filename(filename):
     """Convert S3 key to safe local filename/path"""
     safe_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./\\"
     return ''.join(c if c in safe_chars else '_' for c in filename)
+
+def parse_arguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(
+        description="AWS Security Assessment & Data Exfiltration Tool",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python3 CloudTap.py --keys default          # Use default AWS profile
+  python3 CloudTap.py --keys myprofile        # Use specific AWS profile
+  python3 CloudTap.py --keys init             # Use 'init' profile
+  python3 CloudTap.py                         # Manual credential input
+        """
+    )
+    
+    parser.add_argument(
+        '--keys', 
+        type=str, 
+        help='AWS profile name to load credentials from (e.g., default, init, myprofile)'
+    )
+    
+    parser.add_argument(
+        '--list-profiles',
+        action='store_true',
+        help='List available AWS profiles and exit'
+    )
+    
+    parser.add_argument(
+        '--env-file',
+        type=str,
+        default='.env',
+        help='Path to .env file (default: .env)'
+    )
+    
+    return parser.parse_args()
 
 def download_s3_object(s3_client, bucket_name, obj_key, local_base_path, pbar=None):
     """Download S3 object and create necessary directories"""
@@ -1436,6 +1600,20 @@ def list_and_download_bucket(s3_client, bucket_name):
 
 # Header
 # -*- coding: utf-8 -*-
+
+args = parse_arguments()
+
+if load_env_file(args.env_file):
+        print(f"{Fore.GREEN}✅ Loaded environment variables from {args.env_file}{Style.RESET_ALL}")
+
+# Handle list profiles
+if args.list_profiles:
+    profiles = list_available_profiles()
+    print(f"{Fore.CYAN}Available AWS profiles:{Style.RESET_ALL}")
+    for i, profile in enumerate(profiles, 1):
+        print(f"{Fore.GREEN}{i}. {profile}{Style.RESET_ALL}")
+    sys.exit(0)
+
 print("""
  ██████╗██╗      ██████╗ ██╗   ██╗██████╗ ████████╗ █████╗ ██████╗ 
 ██╔════╝██║     ██╔═══██╗██║   ██║██╔══██╗╚══██╔══╝██╔══██╗██╔══██╗
@@ -1452,12 +1630,46 @@ print(f"{Style.RESET_ALL}")
 
 logger.info("Starting AWS Security Assessment")
 
-# Prompting for credentials and inputs
-print(f"{Fore.YELLOW}Please provide AWS credentials:{Style.RESET_ALL}")
-access_key = input(f"{Fore.GREEN}Enter AWS Access Key ID: {Style.RESET_ALL}").strip()
-secret_access_key = input(f"{Fore.GREEN}Enter AWS Secret Access Key: {Style.RESET_ALL}").strip()
-session_token = input(f"{Fore.GREEN}Enter AWS Session Token (leave blank if not using temporary credentials): {Style.RESET_ALL}").strip()
-region = input(f"{Fore.GREEN}Enter AWS Region [default: us-east-1]: {Style.RESET_ALL}").strip() or 'us-east-1'
+# Get credentials
+access_key = None
+secret_access_key = None
+session_token = None
+region = None
+
+if args.keys:
+    print(f"{Fore.BLUE}🔑 Loading credentials from profile: {args.keys}{Style.RESET_ALL}")
+    credentials = get_aws_credentials_from_profile(args.keys)
+    
+    if credentials:
+        access_key = credentials['access_key']
+        secret_access_key = credentials['secret_key']
+        session_token = credentials.get('session_token')
+        region = credentials['region']
+        
+        print(f"{Fore.GREEN}✅ Successfully loaded credentials from profile '{args.keys}'{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}📍 Region: {region}{Style.RESET_ALL}")
+        
+        if session_token:
+            print(f"{Fore.MAGENTA}🎫 Using temporary credentials (session token found){Style.RESET_ALL}")
+        else:
+            print(f"{Fore.BLUE}🔑 Using permanent credentials (no session token){Style.RESET_ALL}")
+    else:
+        print(f"{Fore.RED}❌ Failed to load credentials from profile '{args.keys}'{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}📋 Available profiles:{Style.RESET_ALL}")
+        profiles = list_available_profiles()
+        for profile in profiles:
+            print(f"  {Fore.CYAN}- {profile}{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}💡 Use --list-profiles to see all available profiles{Style.RESET_ALL}")
+        sys.exit(1)
+else:
+    # Manual credential input (original behavior)
+    print(f"{Fore.YELLOW}Please provide AWS credentials:{Style.RESET_ALL}")
+    access_key = input(f"{Fore.GREEN}Enter AWS Access Key ID: {Style.RESET_ALL}").strip()
+    secret_access_key = input(f"{Fore.GREEN}Enter AWS Secret Access Key: {Style.RESET_ALL}").strip()
+    session_token = input(f"{Fore.GREEN}Enter AWS Session Token (leave blank if not using temporary credentials): {Style.RESET_ALL}").strip()
+    region = input(f"{Fore.GREEN}Enter AWS Region [default: us-east-1]: {Style.RESET_ALL}").strip() or 'us-east-1'
+
+# Always prompt for bucket and other options regardless of how credentials were obtained
 bucket = input(f"{Fore.GREEN}Enter specific S3 Bucket name (leave blank to scan all accessible buckets): {Style.RESET_ALL}").strip()
 
 logger.info(f"Configured for region: {region}")

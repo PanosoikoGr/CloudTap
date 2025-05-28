@@ -43,6 +43,24 @@
 
 ---
 
+## Usage
+
+```
+# Use specific profile (no credential prompts)
+python3 CloudTap.py --keys init
+
+# List available profiles
+python3 CloudTap.py --list-profiles
+
+# Use custom .env file
+python3 CloudTap.py --keys myprofile --env-file /path/to/.env
+
+# Traditional manual input (original behavior)
+python3 CloudTap.py
+```
+
+---
+
 ## 🧰 Requirements
 
 - Python 3.x  

@@ -12,6 +12,7 @@ import requests
 from urllib.parse import urlparse
 import base64
 import argparse
+from botocore.exceptions import ProfileNotFound
 
 AWS_REGIONS = [
     'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',

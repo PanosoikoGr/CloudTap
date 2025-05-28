@@ -33,6 +33,13 @@
 - **Lambda functions**
   - Get-Download-Enum Lambda functions and all region
 
+- **EC2 Instance Analysis**
+  - **Network Targets**: Public/private IPs, DNS names, network interfaces
+  - **Attack Surface**: Security groups with detailed rules, open ports, internet-facing services
+  - **Data & Privilege Escalation**: EBS volumes (encrypted/unencrypted), IAM profiles, user data, tags
+  - **System Info**: Instance types, platforms, key pairs, availability zones
+  - **Multi-region scanning** with comprehensive summaries
+
 - **Assumable Role Detection**
   - Analyzes trust policies of IAM roles to identify assumable roles based on your current identity.  
   - Attempts to assume those roles and logs results.

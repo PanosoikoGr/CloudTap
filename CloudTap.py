@@ -1599,10 +1599,324 @@ def list_and_download_bucket(s3_client, bucket_name):
         logger.error(error_msg)
         print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
 
+class AWSPrivEscAnalyzer:
+    def __init__(self):
+        # Define privilege escalation methods with required permissions
+        self.privesc_methods = {
+            1: {
+                "name": "Creating a new policy version",
+                "required_perms": ["iam:CreatePolicyVersion"],
+                "description": "Create a new version of an IAM policy with custom permissions using the --set-as-default flag",
+                "impact": "Full administrator access",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            2: {
+                "name": "Setting the default policy version to an existing version",
+                "required_perms": ["iam:SetDefaultPolicyVersion"],
+                "description": "Change the default version to any other existing policy version that may have higher privileges",
+                "impact": "Varies based on inactive policy versions (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            3: {
+                "name": "Creating an EC2 instance with an existing instance profile",
+                "required_perms": ["iam:PassRole", "ec2:RunInstances"],
+                "description": "Create a new EC2 instance and pass an existing instance profile to access AWS keys from metadata",
+                "impact": "Access to instance profile permissions (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            4: {
+                "name": "Creating a new user access key",
+                "required_perms": ["iam:CreateAccessKey"],
+                "description": "Create access key ID and secret for another user if they don't have 2 sets already",
+                "impact": "Same permissions as target user (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            5: {
+                "name": "Creating a new login profile",
+                "required_perms": ["iam:CreateLoginProfile"],
+                "description": "Create a password for AWS console login on users without existing login profiles",
+                "impact": "Same permissions as target user (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            6: {
+                "name": "Updating an existing login profile",
+                "required_perms": ["iam:UpdateLoginProfile"],
+                "description": "Change the password for AWS console login on users with existing login profiles",
+                "impact": "Same permissions as target user (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            7: {
+                "name": "Attaching a policy to a user",
+                "required_perms": ["iam:AttachUserPolicy"],
+                "description": "Attach the AdministratorAccess policy or other high-privilege policies to a user",
+                "impact": "Full administrator access",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            8: {
+                "name": "Attaching a policy to a group",
+                "required_perms": ["iam:AttachGroupPolicy"],
+                "description": "Attach the AdministratorAccess policy to a group you're a member of",
+                "impact": "Full administrator access",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            9: {
+                "name": "Attaching a policy to a role",
+                "required_perms": ["iam:AttachRolePolicy"],
+                "description": "Attach the AdministratorAccess policy to a role you have access to",
+                "impact": "Full administrator access",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            10: {
+                "name": "Creating/updating an inline policy for a user",
+                "required_perms": ["iam:PutUserPolicy"],
+                "description": "Create or update an inline policy with arbitrary permissions for a user",
+                "impact": "Full administrator access",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            11: {
+                "name": "Creating/updating an inline policy for a group",
+                "required_perms": ["iam:PutGroupPolicy"],
+                "description": "Create or update an inline policy with arbitrary permissions for a group you're in",
+                "impact": "Full administrator access",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            12: {
+                "name": "Creating/updating an inline policy for a role",
+                "required_perms": ["iam:PutRolePolicy"],
+                "description": "Create or update an inline policy with arbitrary permissions for a role",
+                "impact": "Full administrator access",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            13: {
+                "name": "Adding a user to a group",
+                "required_perms": ["iam:AddUserToGroup"],
+                "description": "Add yourself to an existing IAM group with higher privileges",
+                "impact": "Privileges of target group (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            14: {
+                "name": "Updating the AssumeRolePolicyDocument of a role",
+                "required_perms": ["iam:UpdateAssumeRolePolicy", "sts:AssumeRole"],
+                "description": "Change assume role policy to allow you to assume any existing role",
+                "impact": "Privileges of target role (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            15: {
+                "name": "Passing a role to a new Lambda function, then invoking it",
+                "required_perms": ["iam:PassRole", "lambda:CreateFunction", "lambda:InvokeFunction"],
+                "description": "Create Lambda function with existing service role and invoke it to perform actions",
+                "impact": "Access to Lambda service role permissions (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            16: {
+                "name": "Passing a role to a new Lambda function, then invoking it cross-account",
+                "required_perms": ["iam:PassRole", "lambda:CreateFunction", "lambda:AddPermission"],
+                "description": "Create Lambda function and allow cross-account invocation to execute with higher privileges",
+                "impact": "Access to Lambda service role permissions (no escalation to full admin)",
+                "link": "None"
+            },
+            17: {
+                "name": "Passing a role to a new Lambda function, then triggering it with DynamoDB",
+                "required_perms": ["iam:PassRole", "lambda:CreateFunction", "lambda:CreateEventSourceMapping"],
+                "optional_perms": ["dynamodb:PutItem", "dynamodb:CreateTable"],
+                "description": "Create Lambda function triggered by DynamoDB events to execute with higher privileges",
+                "impact": "Access to Lambda service role permissions (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            18: {
+                "name": "Updating the code of an existing Lambda function",
+                "required_perms": ["lambda:UpdateFunctionCode"],
+                "description": "Update existing Lambda function code to perform actions with its attached role",
+                "impact": "Access to function's service role permissions (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            19: {
+                "name": "Passing a role to a Glue Development Endpoint",
+                "required_perms": ["iam:PassRole", "glue:CreateDevEndpoint"],
+                "description": "Create Glue dev endpoint with existing service role and SSH into it",
+                "impact": "Access to Glue service role permissions (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            20: {
+                "name": "Updating an existing Glue Dev Endpoint",
+                "required_perms": ["glue:UpdateDevEndpoint"],
+                "description": "Update SSH public key of existing Glue dev endpoint to gain access",
+                "impact": "Access to attached role permissions (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            21: {
+                "name": "Passing a role to CloudFormation",
+                "required_perms": ["iam:PassRole", "cloudformation:CreateStack"],
+                "description": "Create CloudFormation stack with existing role to perform actions and create resources",
+                "impact": "Access to passed role permissions (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            22: {
+                "name": "Passing a role to Data Pipeline",
+                "required_perms": ["iam:PassRole", "datapipeline:CreatePipeline", "datapipeline:PutPipelineDefinition"],
+                "description": "Create data pipeline to run arbitrary AWS CLI commands with passed role permissions",
+                "impact": "Access to passed role permissions (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/"
+            },
+            23: {
+                "name": "Creating a CodeStar project from a template",
+                "required_perms": ["codestar:CreateProjectFromTemplate"],
+                "description": "Use undocumented CodeStar API to create project from built-in template with elevated privileges",
+                "impact": "Reasonable privilege escalation, potential full admin access",
+                "link": "https://rhinosecuritylabs.com/aws/escalating-aws-iam-privileges-undocumented-codestar-api/"
+            },
+            24: {
+                "name": "Passing a role to a new CodeStar project",
+                "required_perms": ["codestar:CreateProject", "iam:PassRole"],
+                "description": "Create CodeStar project with passed role that has admin escalation capabilities",
+                "impact": "Full administrator access (default CodeStar service role can escalate)",
+                "link": "https://rhinosecuritylabs.com/aws/escalating-aws-iam-privileges-undocumented-codestar-api/"
+            },
+            25: {
+                "name": "Creating a new CodeStar project and associating a team member",
+                "required_perms": ["codestar:CreateProject", "codestar:AssociateTeamMember"],
+                "description": "Create CodeStar project and associate yourself as Owner to get attached IAM policy",
+                "impact": "Read-only access to multiple services and full CodeStar access",
+                "link": "https://rhinosecuritylabs.com/aws/escalating-aws-iam-privileges-undocumented-codestar-api/"
+            },
+            26: {
+                "name": "Adding a malicious Lambda layer to an existing Lambda function",
+                "required_perms": ["lambda:UpdateFunctionConfiguration"],
+                "description": "Attach Lambda layer to override libraries and execute malicious code with function's role",
+                "impact": "Access to function's service role permissions (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation-part-2"
+            },
+            27: {
+                "name": "Passing a role to a new SageMaker Jupyter notebook",
+                "required_perms": ["sagemaker:CreateNotebookInstance", "sagemaker:CreatePresignedNotebookInstanceUrl", "iam:PassRole"],
+                "description": "Create SageMaker Jupyter notebook with passed role and access credentials through UI",
+                "impact": "Access to SageMaker service role permissions (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation-part-2"
+            },
+            28: {
+                "name": "Gaining access to an existing SageMaker Jupyter notebook",
+                "required_perms": ["sagemaker:CreatePresignedNotebookInstanceUrl"],
+                "description": "Create signed URL for existing SageMaker notebook to access its credentials",
+                "impact": "Access to notebook's service role permissions (no escalation to full admin)",
+                "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation-part-2"
+            }
+        }
+
+def analyze_permissions(self, permissions):
+        """
+        Analyze given permissions and return possible privilege escalation paths
+        
+        Args:
+            permissions (list): List of IAM permissions (e.g., ['iam:CreatePolicyVersion', 'ec2:RunInstances'])
+        
+        Returns:
+            dict: Dictionary containing possible escalation methods
+        """
+        # Convert permissions to lowercase for case-insensitive matching
+        user_perms = [perm.lower().strip() for perm in permissions]
+        possible_methods = []
+        
+        print(f"[+] Analyzing {len(user_perms)} permissions...")
+        print(f"[+] Permissions: {', '.join(permissions)}")
+        print("\n" + "="*80)
+        
+        for method_id, method_info in self.privesc_methods.items():
+            required_perms = [perm.lower() for perm in method_info["required_perms"]]
+            optional_perms = []
+            
+            if "optional_perms" in method_info:
+                optional_perms = [perm.lower() for perm in method_info["optional_perms"]]
+            
+            # Check if all required permissions are present
+            has_required = all(perm in user_perms for perm in required_perms)
+            
+            if has_required:
+                # Check for optional permissions
+                has_optional = []
+                for opt_perm in optional_perms:
+                    if opt_perm in user_perms:
+                        has_optional.append(opt_perm)
+                
+                method_result = {
+                    "id": method_id,
+                    "name": method_info["name"],
+                    "description": method_info["description"],
+                    "impact": method_info["impact"],
+                    "link": method_info["link"],
+                    "required_permissions": method_info["required_perms"],
+                    "optional_permissions": method_info.get("optional_perms", []),
+                    "optional_found": has_optional
+                }
+                
+                possible_methods.append(method_result)
+        
+        return possible_methods
+
+def print_results(self, methods):
+    """Print the analysis results in a formatted way"""
+        
+    if not methods:
+        print("[-] No privilege escalation methods found for the given permissions.")
+        return
+        
+    print(f"[+] Found {len(methods)} possible privilege escalation method(s):")
+    print("\n")
+        
+    # Sort by impact (full admin first)
+    high_impact = [m for m in methods if "full administrator" in m["impact"].lower()]
+    medium_impact = [m for m in methods if m not in high_impact and ("reasonable" in m["impact"].lower() or "read-only" in m["impact"].lower())]
+    low_impact = [m for m in methods if m not in high_impact and m not in medium_impact]
+        
+    all_methods = high_impact + medium_impact + low_impact
+        
+    for i, method in enumerate(all_methods, 1):
+        # Determine risk level
+        if method in high_impact:
+            risk_level = "🔴 HIGH RISK"
+        elif method in medium_impact:
+            risk_level = "🟡 MEDIUM RISK"
+        else:
+            risk_level = "🟢 LOW RISK"
+            
+        print(f"{'='*80}")
+        print(f"Method #{method['id']}: {method['name']}")
+        print(f"Risk Level: {risk_level}")
+        print(f"{'='*80}")
+            
+        print(f"\n📋 Description:")
+        print(f"   {method['description']}")
+            
+        print(f"\n🎯 Potential Impact:")
+        print(f"   {method['impact']}")
+            
+        print(f"\n🔑 Required Permissions:")
+        for perm in method['required_permissions']:
+            print(f"   ✓ {perm}")
+            
+        if method['optional_permissions']:
+            print(f"\n🔑 Optional Permissions:")
+            for perm in method['optional_permissions']:
+                status = "✓" if perm.lower() in [p.lower() for p in method['optional_found']] else "✗"
+                print(f"   {status} {perm}")
+            
+        print(f"\n🔗 Reference:")
+        print(f"   {method['link']}")
+            
+        print("\n")
+
 # Header
 # -*- coding: utf-8 -*-
 
 args = parse_arguments()
+analyzer = AWSPrivEscAnalyzer()
+
+permissions = [] #Push permission to this list
+# -------------- IN PROGRESS ------------------
+# Analyze permissions
+#results = analyzer.analyze_permissions(permissions)
+    
+# Print results
+#analyzer.print_results(results)
 
 if load_env_file(args.env_file):
         print(f"{Fore.GREEN}✅ Loaded environment variables from {args.env_file}{Style.RESET_ALL}")

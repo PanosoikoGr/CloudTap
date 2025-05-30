@@ -14,6 +14,8 @@ import base64
 import argparse
 from botocore.exceptions import ProfileNotFound
 
+permissions = [] #Push permission to this list
+
 AWS_REGIONS = [
     'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
     'eu-west-1', 'eu-west-2', 'eu-west-3', 'eu-central-1', 'eu-north-1',
@@ -1904,19 +1906,27 @@ def print_results(self, methods):
             
         print("\n")
 
+def extract_permissions_from_policy(policy_document):
+    if isinstance(policy_document, dict):
+        statements = policy_document.get('Statement', [])
+        if not isinstance(statements, list):
+            statements = [statements]
+        
+        for statement in statements:
+            if statement.get('Effect') == 'Allow':
+                actions = statement.get('Action', [])
+                if isinstance(actions, str):
+                    actions = [actions]
+                
+                for action in actions:
+                    if action not in permissions:
+                        permissions.append(action)
+
 # Header
 # -*- coding: utf-8 -*-
 
 args = parse_arguments()
 analyzer = AWSPrivEscAnalyzer()
-
-permissions = [] #Push permission to this list
-# -------------- IN PROGRESS ------------------
-# Analyze permissions
-#results = analyzer.analyze_permissions(permissions)
-    
-# Print results
-#analyzer.print_results(results)
 
 if load_env_file(args.env_file):
         print(f"{Fore.GREEN}✅ Loaded environment variables from {args.env_file}{Style.RESET_ALL}")
@@ -2083,7 +2093,8 @@ if username and not session_token:
             )
             print(f"   {Fore.BLUE}Permissions for {policy['PolicyName']} (Default Version {version_id}):{Style.RESET_ALL}")
             print_policy_document(policy_version["PolicyVersion"]["Document"])
-            
+            extract_permissions_from_policy(policy_version["PolicyVersion"]["Document"])
+
             # Ask if user wants to list all versions
             list_versions = input(f"\n{Fore.CYAN}Do you want to list all versions of policy '{policy['PolicyName']}'? (y/N): {Style.RESET_ALL}").strip().lower()
             if list_versions in ['y', 'yes']:
@@ -2127,6 +2138,7 @@ if username and not session_token:
             policy_doc = iam_client.get_user_policy(UserName=username, PolicyName=policy_name)
             print(f"   {Fore.BLUE}Permissions:{Style.RESET_ALL}")
             print_policy_document(policy_doc["PolicyDocument"])
+            extract_permissions_from_policy(policy_doc["PolicyDocument"])
 
         # Group memberships
         user_groups = iam_client.list_groups_for_user(UserName=username)
@@ -2148,7 +2160,8 @@ if username and not session_token:
                 )
                 print(f"     {Fore.BLUE}Permissions for {policy['PolicyName']} (Default Version {version_id}):{Style.RESET_ALL}")
                 print_policy_document(policy_version["PolicyVersion"]["Document"])
-                
+                extract_permissions_from_policy(policy_version["PolicyVersion"]["Document"])
+
                 # Ask if user wants to list all versions for group policies too
                 list_versions = input(f"\n{Fore.CYAN}Do you want to list all versions of group policy '{policy['PolicyName']}'? (y/N): {Style.RESET_ALL}").strip().lower()
                 if list_versions in ['y', 'yes']:
@@ -2189,6 +2202,7 @@ if username and not session_token:
                 policy_doc = iam_client.get_group_policy(GroupName=group_name, PolicyName=policy_name)
                 print(f"     {Fore.BLUE}Permissions:{Style.RESET_ALL}")
                 print_policy_document(policy_doc["PolicyDocument"])
+                extract_permissions_from_policy(policy_doc["PolicyDocument"])
 
     except Exception as e:
         error_msg = f"Error fetching IAM details for {username}: {e}"
@@ -2490,6 +2504,12 @@ print("=" * 60)
 print("                    ASSESSMENT COMPLETE")
 print("=" * 60)
 print(f"{Style.RESET_ALL}")
+
+# Analyze permissions
+results = analyzer.analyze_permissions(permissions)
+    
+# Print results
+analyzer.print_results(results)
 
 print(f"{Fore.GREEN}✅ AWS Security Assessment Complete{Style.RESET_ALL}")
 print(f"{Fore.CYAN}📁 S3 downloads saved to: ./s3_downloads/{Style.RESET_ALL}")

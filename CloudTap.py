@@ -1804,7 +1804,7 @@ class AWSPrivEscAnalyzer:
             }
         }
 
-def analyze_permissions(self, permissions):
+    def analyze_permissions(self, permissions):
         """
         Analyze given permissions and return possible privilege escalation paths
         
@@ -1854,57 +1854,57 @@ def analyze_permissions(self, permissions):
         
         return possible_methods
 
-def print_results(self, methods):
-    """Print the analysis results in a formatted way"""
+    def print_results(self, methods):
+        """Print the analysis results in a formatted way"""
         
-    if not methods:
-        print("[-] No privilege escalation methods found for the given permissions.")
-        return
-        
-    print(f"[+] Found {len(methods)} possible privilege escalation method(s):")
-    print("\n")
-        
-    # Sort by impact (full admin first)
-    high_impact = [m for m in methods if "full administrator" in m["impact"].lower()]
-    medium_impact = [m for m in methods if m not in high_impact and ("reasonable" in m["impact"].lower() or "read-only" in m["impact"].lower())]
-    low_impact = [m for m in methods if m not in high_impact and m not in medium_impact]
-        
-    all_methods = high_impact + medium_impact + low_impact
-        
-    for i, method in enumerate(all_methods, 1):
-        # Determine risk level
-        if method in high_impact:
-            risk_level = "🔴 HIGH RISK"
-        elif method in medium_impact:
-            risk_level = "🟡 MEDIUM RISK"
-        else:
-            risk_level = "🟢 LOW RISK"
+        if not methods:
+            print("[-] No privilege escalation methods found for the given permissions.")
+            return
             
-        print(f"{'='*80}")
-        print(f"Method #{method['id']}: {method['name']}")
-        print(f"Risk Level: {risk_level}")
-        print(f"{'='*80}")
-            
-        print(f"\n📋 Description:")
-        print(f"   {method['description']}")
-            
-        print(f"\n🎯 Potential Impact:")
-        print(f"   {method['impact']}")
-            
-        print(f"\n🔑 Required Permissions:")
-        for perm in method['required_permissions']:
-            print(f"   ✓ {perm}")
-            
-        if method['optional_permissions']:
-            print(f"\n🔑 Optional Permissions:")
-            for perm in method['optional_permissions']:
-                status = "✓" if perm.lower() in [p.lower() for p in method['optional_found']] else "✗"
-                print(f"   {status} {perm}")
-            
-        print(f"\n🔗 Reference:")
-        print(f"   {method['link']}")
-            
+        print(f"[+] Found {len(methods)} possible privilege escalation method(s):")
         print("\n")
+            
+        # Sort by impact (full admin first)
+        high_impact = [m for m in methods if "full administrator" in m["impact"].lower()]
+        medium_impact = [m for m in methods if m not in high_impact and ("reasonable" in m["impact"].lower() or "read-only" in m["impact"].lower())]
+        low_impact = [m for m in methods if m not in high_impact and m not in medium_impact]
+            
+        all_methods = high_impact + medium_impact + low_impact
+            
+        for i, method in enumerate(all_methods, 1):
+            # Determine risk level
+            if method in high_impact:
+                risk_level = "🔴 HIGH RISK"
+            elif method in medium_impact:
+                risk_level = "🟡 MEDIUM RISK"
+            else:
+                risk_level = "🟢 LOW RISK"
+                
+            print(f"{'='*80}")
+            print(f"Method #{method['id']}: {method['name']}")
+            print(f"Risk Level: {risk_level}")
+            print(f"{'='*80}")
+                
+            print(f"\n📋 Description:")
+            print(f"   {method['description']}")
+                
+            print(f"\n🎯 Potential Impact:")
+            print(f"   {method['impact']}")
+                
+            print(f"\n🔑 Required Permissions:")
+            for perm in method['required_permissions']:
+                print(f"   ✓ {perm}")
+                
+            if method['optional_permissions']:
+                print(f"\n🔑 Optional Permissions:")
+                for perm in method['optional_permissions']:
+                    status = "✓" if perm.lower() in [p.lower() for p in method['optional_found']] else "✗"
+                    print(f"   {status} {perm}")
+                
+            print(f"\n🔗 Reference:")
+            print(f"   {method['link']}")
+                
+            print("\n")
 
 def extract_permissions_from_policy(policy_document):
     if isinstance(policy_document, dict):
@@ -2307,7 +2307,7 @@ print(f"{Fore.CYAN}5. Analyze EC2 and EBS{Style.RESET_ALL}")
 print(f"{Fore.RED}6. Run Full Scan{Style.RESET_ALL}")
 print(f"{Fore.CYAN}Press Enter to skip optional analyses{Style.RESET_ALL}")
 
-choice = input(f"{Fore.GREEN}Enter your choice (1-5) or press Enter to continue: {Style.RESET_ALL}").strip()
+choice = input(f"{Fore.GREEN}Enter your choice (1-6) or press Enter to continue: {Style.RESET_ALL}").strip()
 
 if choice == "1":
     analyze_lambda_functions(session, region)
@@ -2498,18 +2498,18 @@ else:
     print(f"{Fore.BLUE}ℹ️  To analyze role assumptions, run this tool with permanent IAM user credentials.{Style.RESET_ALL}")
     logger.info("Skipping role assumption analysis - already using assumed role credentials")
 
+# Analyze permissions
+results = analyzer.analyze_permissions(permissions)
+    
+# Print results
+analyzer.print_results(results)
+
 # Final Summary
 print(f"\n{Fore.GREEN}{Back.BLACK}")
 print("=" * 60)
 print("                    ASSESSMENT COMPLETE")
 print("=" * 60)
 print(f"{Style.RESET_ALL}")
-
-# Analyze permissions
-results = analyzer.analyze_permissions(permissions)
-    
-# Print results
-analyzer.print_results(results)
 
 print(f"{Fore.GREEN}✅ AWS Security Assessment Complete{Style.RESET_ALL}")
 print(f"{Fore.CYAN}📁 S3 downloads saved to: ./s3_downloads/{Style.RESET_ALL}")

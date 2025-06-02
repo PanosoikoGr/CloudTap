@@ -2411,7 +2411,7 @@ if not session_token:
         # Strategy 2: Brute force attempt all roles (based on user permissions)
         print(f"\n{Fore.BLUE}Strategy 2: Brute force role assumption attempts...{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}Attempting to assume all roles (user has sts:AssumeRole permissions)...{Style.RESET_ALL}")
-        
+
         with tqdm(total=len(all_roles), desc="Attempting role assumption", unit="role", colour="red") as attempt_pbar:
             for role in all_roles:
                 role_name = role["RoleName"]
@@ -2420,12 +2420,24 @@ if not session_token:
                 attempt_pbar.set_description(f"Trying {role_name[:25]}...")
                 attempted_roles.append(role_name)
                 
+                # FIRST: Always analyze the role's permissions before attempting assumption
+                print(f"\n{Fore.BLUE}  🔍 Analyzing role '{role_name}'...{Style.RESET_ALL}")
+                role_permissions = analyze_role_permissions(iam_client, role_name)
+                
+                # Show role permissions for all roles
+                print(f" {Fore.MAGENTA}📋 Role '{role_name}' has {len(set(role_permissions))} unique permissions{Style.RESET_ALL}")
+                if role_permissions:
+                    print(f" {Fore.CYAN}  Permissions: {', '.join(sorted(set(role_permissions)))}{Style.RESET_ALL}")
+                else:
+                    print(f" {Fore.YELLOW}  No inline policies found (may have AWS managed policies){Style.RESET_ALL}")
+                
+                # Show trust policy for all roles
+                trust_policy = role["AssumeRolePolicyDocument"]
+                print(f" {Fore.BLUE}📜 Trust Policy:{Style.RESET_ALL}")
+                print_policy_document(trust_policy)
+                
                 # Try to assume every role
                 try:
-                    # FIRST: Analyze the role's permissions before attempting assumption
-                    print(f"\n{Fore.BLUE}  🔍 Analyzing role '{role_name}' before assumption attempt...{Style.RESET_ALL}")
-                    role_permissions = analyze_role_permissions(iam_client, role_name)
-                    
                     session_name = f"SecurityTest-{username if username else 'Unknown'}-{role_name[:20]}"
                     print(f"    {Fore.YELLOW}🎲 Attempting to assume role...{Style.RESET_ALL}")
                     
@@ -2437,7 +2449,6 @@ if not session_token:
                     # Success!
                     print(f"\n{Fore.GREEN}🎉 SUCCESS: Assumed role '{role_name}'!{Style.RESET_ALL}")
                     print(f" {Fore.CYAN}- Role ARN: {role_arn}{Style.RESET_ALL}")
-                    print(f" {Fore.MAGENTA}- This role grants {len(set(role_permissions))} unique permissions{Style.RESET_ALL}")
                     
                     credentials = assume_response["Credentials"]
                     print(f" {Fore.YELLOW}📋 Temporary session credentials:{Style.RESET_ALL}")
@@ -2455,23 +2466,16 @@ if not session_token:
                     
                     logger.success(f"Successfully assumed role: {role_name}")
                     
-                    # Also show the trust policy for successful roles
-                    trust_policy = role["AssumeRolePolicyDocument"]
-                    print(f" {Fore.BLUE}📜 Trust Policy that allowed this:{Style.RESET_ALL}")
-                    print_policy_document(trust_policy)
-                    
                 except Exception as assume_error:
-                    # Most will fail, so we'll just log details for debugging
+                    # Show failure but we already displayed the permissions above
+                    print(f" {Fore.RED}❌ Failed to assume role: {assume_error}{Style.RESET_ALL}")
                     logger.debug(f"Could not assume role '{role_name}': {assume_error}")
-                    
-                    # Only show errors for roles we thought might work
-                    if role_name in matching_roles:
-                        print(f" {Fore.RED}❌ Failed to assume '{role_name}': {assume_error}{Style.RESET_ALL}")
                 
+                print(f" {Fore.BLUE}{'='*60}{Style.RESET_ALL}")  # Separator between roles
                 attempt_pbar.update(1)
-        
+
         if successful_roles:
-            print(f"\n{Fore.GREEN}🎯 Successfully assumed roles:{Style.RESET_ALL}")
+            print(f"\n{Fore.GREEN}🎯 Successfully assumed roles summary:{Style.RESET_ALL}")
             for role_info in successful_roles:
                 print(f" {Fore.GREEN}✅ {role_info['role_name']} ({role_info['role_arn']}){Style.RESET_ALL}")
             logger.success(f"Successfully assumed {len(successful_roles)} roles")
@@ -2486,11 +2490,10 @@ if not session_token:
 
         print(f"\n{Fore.BLUE}ℹ️  Note: AWS service-linked roles (AWSServiceRoleFor*, /aws-service-role/, etc.) were filtered out{Style.RESET_ALL}")
         print(f"{Fore.CYAN}   These roles are managed by AWS services and cannot be assumed by users.{Style.RESET_ALL}")
-            
     except Exception as e:
-        error_msg = f"Error while listing/analyzing roles: {e}"
-        logger.error(error_msg)
-        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+            error_msg = f"Error while listing/analyzing roles: {e}"
+            logger.error(error_msg)
+            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
 
 else:
     print(f"\n{Fore.YELLOW}=== Role Assumption Analysis ==={Style.RESET_ALL}")

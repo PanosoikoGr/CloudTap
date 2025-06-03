@@ -540,7 +540,7 @@ def analyze_ec2_instances(session, current_region):
         
         try:
             ec2_client = session.client("ec2", region_name=region)
-            region_instances, region_running, region_volumes, region_sgs = analyze_ec2_in_region(ec2_client, region)
+            region_instances, region_running, region_volumes, region_sgs = analyze_ec2_in_region(ec2_client, iam_client, region)
             total_instances += region_instances
             total_running_instances += region_running
             total_volumes += region_volumes
@@ -561,7 +561,215 @@ def analyze_ec2_instances(session, current_region):
     
     logger.info(f"EC2 analysis complete across {len(regions_to_scan)} regions: {total_instances} instances ({total_running_instances} running), {total_volumes} volumes, {total_security_groups} security groups")
 
-def analyze_ec2_in_region(ec2_client, region):
+def get_instance_profile_details(iam_client, profile_arn, instance_id):
+    """Get detailed information about IAM instance profile and associated roles"""
+    try:
+        # Extract profile name from ARN
+        profile_name = profile_arn.split('/')[-1]
+        
+        print(f"  {Fore.RED}Profile Name: {profile_name}{Style.RESET_ALL}")
+        
+        # Get instance profile details
+        profile_response = iam_client.get_instance_profile(InstanceProfileName=profile_name)
+        profile_info = profile_response['InstanceProfile']
+        
+        print(f"  {Fore.GREEN}Creation Date: {profile_info.get('CreateDate', 'N/A')}{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}Path: {profile_info.get('Path', 'N/A')}{Style.RESET_ALL}")
+        
+        # Get associated roles
+        roles = profile_info.get('Roles', [])
+        if roles:
+            print(f"\n  {Fore.RED}🎭 Associated IAM Roles ({len(roles)}):{Style.RESET_ALL}")
+            
+            for role in roles:
+                role_name = role['RoleName']
+                role_arn = role['Arn']
+                
+                print(f"\n    {Fore.RED}📋 Role: {role_name}{Style.RESET_ALL}")
+                print(f"      {Fore.GREEN}Role ARN: {role_arn}{Style.RESET_ALL}")
+                print(f"      {Fore.GREEN}Creation Date: {role.get('CreateDate', 'N/A')}{Style.RESET_ALL}")
+                print(f"      {Fore.GREEN}Max Session Duration: {role.get('MaxSessionDuration', 'N/A')} seconds{Style.RESET_ALL}")
+                
+                # Get role's trust policy (who can assume this role)
+                try:
+                    trust_policy = role.get('AssumeRolePolicyDocument')
+                    if trust_policy:
+                        print(f"      {Fore.YELLOW}🔐 Trust Policy (Who can assume):{Style.RESET_ALL}")
+                        # Parse trust policy to show principals
+                        import json
+                        import urllib.parse
+                        
+                        if isinstance(trust_policy, str):
+                            trust_policy = json.loads(urllib.parse.unquote(trust_policy))
+                        
+                        statements = trust_policy.get('Statement', [])
+                        for stmt in statements:
+                            effect = stmt.get('Effect', 'Unknown')
+                            action = stmt.get('Action', [])
+                            principal = stmt.get('Principal', {})
+                            
+                            if effect == 'Allow' and 'sts:AssumeRole' in (action if isinstance(action, list) else [action]):
+                                if isinstance(principal, dict):
+                                    for principal_type, principal_values in principal.items():
+                                        if isinstance(principal_values, list):
+                                            for value in principal_values:
+                                                print(f"        {Fore.CYAN}• {principal_type}: {value}{Style.RESET_ALL}")
+                                        else:
+                                            print(f"        {Fore.CYAN}• {principal_type}: {principal_values}{Style.RESET_ALL}")
+                except Exception as e:
+                    logger.debug(f"Error parsing trust policy for role {role_name}: {e}")
+                
+                # Get attached managed policies
+                try:
+                    attached_policies = iam_client.list_attached_role_policies(RoleName=role_name)
+                    managed_policies = attached_policies.get('AttachedPolicies', [])
+                    
+                    if managed_policies:
+                        print(f"      {Fore.RED}📜 Attached Managed Policies ({len(managed_policies)}):{Style.RESET_ALL}")
+                        
+                        for policy in managed_policies:
+                            policy_name = policy['PolicyName']
+                            policy_arn = policy['PolicyArn']
+                            
+                            print(f"        {Fore.RED}• {policy_name}{Style.RESET_ALL}")
+                            print(f"          {Fore.GREEN}ARN: {policy_arn}{Style.RESET_ALL}")
+                            
+                            # Highlight dangerous AWS managed policies
+                            dangerous_policies = [
+                                'AdministratorAccess',
+                                'PowerUserAccess',
+                                'IAMFullAccess',
+                                'AmazonS3FullAccess',
+                                'AmazonEC2FullAccess',
+                                'SecurityAudit'
+                            ]
+                            
+                            if any(dangerous in policy_name for dangerous in dangerous_policies):
+                                print(f"          {Fore.RED}🚨 HIGH PRIVILEGE POLICY - ESCALATION RISK{Style.RESET_ALL}")
+                                logger.warning(f"Instance {instance_id} has high privilege policy: {policy_name}")
+                            
+                            # Get policy version and permissions for critical policies
+                            try:
+                                if 'aws:iam::aws:policy' in policy_arn:  # AWS managed policy
+                                    policy_details = iam_client.get_policy(PolicyArn=policy_arn)
+                                    default_version = policy_details['Policy']['DefaultVersionId']
+                                    
+                                    policy_version = iam_client.get_policy_version(
+                                        PolicyArn=policy_arn,
+                                        VersionId=default_version
+                                    )
+                                    
+                                    policy_document = policy_version['PolicyVersion']['Document']
+                                    
+                                    # Show critical permissions
+                                    statements = policy_document.get('Statement', [])
+                                    critical_actions = []
+                                    
+                                    for stmt in statements:
+                                        if stmt.get('Effect') == 'Allow':
+                                            actions = stmt.get('Action', [])
+                                            if isinstance(actions, str):
+                                                actions = [actions]
+                                            
+                                            for action in actions:
+                                                if any(dangerous_action in action.lower() for dangerous_action in 
+                                                      ['*', 'admin', 'full', 'create', 'delete', 'put', 'attach', 'detach']):
+                                                    critical_actions.append(action)
+                                    
+                                    if critical_actions[:5]:  # Show first 5 critical actions
+                                        print(f"          {Fore.YELLOW}⚠️ Critical Actions: {', '.join(critical_actions[:5])}{Style.RESET_ALL}")
+                                        if len(critical_actions) > 5:
+                                            print(f"          {Fore.YELLOW}    ... and {len(critical_actions) - 5} more{Style.RESET_ALL}")
+                                            
+                            except Exception as e:
+                                logger.debug(f"Error getting policy details for {policy_name}: {e}")
+                    
+                    # Get inline policies
+                    inline_policies = iam_client.list_role_policies(RoleName=role_name)
+                    inline_policy_names = inline_policies.get('PolicyNames', [])
+                    
+                    if inline_policy_names:
+                        print(f"      {Fore.RED}📝 Inline Policies ({len(inline_policy_names)}):{Style.RESET_ALL}")
+                        
+                        for policy_name in inline_policy_names:
+                            print(f"        {Fore.RED}• {policy_name}{Style.RESET_ALL}")
+                            
+                            try:
+                                # Get inline policy document
+                                policy_response = iam_client.get_role_policy(
+                                    RoleName=role_name,
+                                    PolicyName=policy_name
+                                )
+                                
+                                policy_document = policy_response['PolicyDocument']
+                                statements = policy_document.get('Statement', [])
+                                
+                                # Analyze permissions
+                                dangerous_actions = []
+                                resource_access = []
+                                
+                                for stmt in statements:
+                                    if stmt.get('Effect') == 'Allow':
+                                        actions = stmt.get('Action', [])
+                                        resources = stmt.get('Resource', [])
+                                        
+                                        if isinstance(actions, str):
+                                            actions = [actions]
+                                        if isinstance(resources, str):
+                                            resources = [resources]
+                                        
+                                        for action in actions:
+                                            if '*' in action or any(danger in action.lower() for danger in 
+                                                                  ['admin', 'full', 'create', 'delete', 'put', 'attach']):
+                                                dangerous_actions.append(action)
+                                        
+                                        for resource in resources:
+                                            if '*' in resource or 'arn:aws' in resource:
+                                                resource_access.append(resource)
+                                
+                                if dangerous_actions:
+                                    print(f"          {Fore.RED}🚨 Dangerous Actions: {', '.join(dangerous_actions[:3])}{Style.RESET_ALL}")
+                                    if len(dangerous_actions) > 3:
+                                        print(f"          {Fore.RED}    ... and {len(dangerous_actions) - 3} more{Style.RESET_ALL}")
+                                
+                                if resource_access:
+                                    critical_resources = [r for r in resource_access if '*' in r]
+                                    if critical_resources:
+                                        print(f"          {Fore.YELLOW}⚠️ Wide Resource Access: {', '.join(critical_resources[:2])}{Style.RESET_ALL}")
+                                        if len(critical_resources) > 2:
+                                            print(f"          {Fore.YELLOW}    ... and {len(critical_resources) - 2} more{Style.RESET_ALL}")
+                                            
+                            except Exception as e:
+                                logger.debug(f"Error getting inline policy {policy_name}: {e}")
+                                
+                except Exception as e:
+                    logger.debug(f"Error getting role policies for {role_name}: {e}")
+                
+                # Show last activity if available
+                try:
+                    role_last_used = iam_client.get_role(RoleName=role_name)
+                    last_used_info = role_last_used['Role'].get('RoleLastUsed', {})
+                    
+                    if last_used_info:
+                        last_used_date = last_used_info.get('LastUsedDate')
+                        last_used_region = last_used_info.get('Region')
+                        
+                        if last_used_date:
+                            print(f"      {Fore.CYAN}🕐 Last Used: {last_used_date} in {last_used_region or 'Unknown region'}{Style.RESET_ALL}")
+                        else:
+                            print(f"      {Fore.YELLOW}🕐 Last Used: Never or > 400 days ago{Style.RESET_ALL}")
+                            
+                except Exception as e:
+                    logger.debug(f"Error getting role last used info for {role_name}: {e}")
+        
+        else:
+            print(f"  {Fore.YELLOW}⚠️ No roles attached to this instance profile{Style.RESET_ALL}")
+            
+    except Exception as e:
+        logger.error(f"Error getting instance profile details: {e}")
+        print(f"  {Fore.RED}❌ Error retrieving profile details: {e}{Style.RESET_ALL}")
+
+def analyze_ec2_in_region(ec2_client, iam_client, region):
     """Analyze EC2 instances in a specific region"""
     try:
         # Get all instances
@@ -660,6 +868,19 @@ def analyze_ec2_in_region(ec2_client, region):
                         print(f"      {Fore.YELLOW}Secondary IPs:{Style.RESET_ALL}")
                         for sec_ip in secondary_ips[1:]:  # Skip primary
                             print(f"        {Fore.YELLOW}• {sec_ip.get('PrivateIpAddress')}{Style.RESET_ALL}")
+            
+            # IAM Instance Profile (ENHANCED - privilege escalation opportunities)
+            iam_instance_profile = instance.get('IamInstanceProfile')
+            if iam_instance_profile:
+                profile_arn = iam_instance_profile.get('Arn', 'N/A')
+                print(f"\n{Fore.RED}🎭 IAM Instance Profile (PRIVILEGE ESCALATION VECTOR):{Style.RESET_ALL}")
+                print(f"  {Fore.RED}Profile ARN: {profile_arn}{Style.RESET_ALL}")
+                logger.warning(f"Instance {instance_id} has IAM profile: {profile_arn}")
+                
+                # Get detailed profile and role information
+                get_instance_profile_details(iam_client, profile_arn, instance_id)
+            else:
+                print(f"\n{Fore.YELLOW}🎭 IAM Instance Profile: None (No AWS API access from instance){Style.RESET_ALL}")
             
             # Security Groups (CRITICAL for attack surface analysis)
             security_groups = instance.get('SecurityGroups', [])
@@ -796,14 +1017,6 @@ def analyze_ec2_in_region(ec2_client, region):
                     else:
                         print(f"  {Fore.GREEN}{key}: {value}{Style.RESET_ALL}")
             
-            # IAM Instance Profile (privilege escalation opportunities)
-            iam_instance_profile = instance.get('IamInstanceProfile')
-            if iam_instance_profile:
-                profile_arn = iam_instance_profile.get('Arn', 'N/A')
-                print(f"\n{Fore.RED}🎭 IAM Instance Profile (PRIVILEGE ESCALATION):{Style.RESET_ALL}")
-                print(f"  {Fore.RED}Profile ARN: {profile_arn}{Style.RESET_ALL}")
-                logger.warning(f"Instance {instance_id} has IAM profile: {profile_arn}")
-            
             # User Data (often contains sensitive bootstrapping info)
             try:
                 user_data_response = ec2_client.describe_instance_attribute(
@@ -847,6 +1060,11 @@ def analyze_ec2_in_region(ec2_client, region):
                 
                 if instance.get('KeyName'):
                     print(f"  {Fore.YELLOW}• SSH Key: {instance['KeyName']} (find private key){Style.RESET_ALL}")
+                
+                # IAM-based attack vectors
+                if iam_instance_profile:
+                    print(f"  {Fore.RED}• IAM Profile Attack: Compromise instance → Assume role → Escalate privileges{Style.RESET_ALL}")
+                    print(f"  {Fore.RED}• Metadata Service: curl http://169.254.169.254/latest/meta-data/iam/security-credentials/{Style.RESET_ALL}")
         
         # Region summary
         print(f"\n{Fore.GREEN}📊 {region} EC2 Summary:{Style.RESET_ALL}")

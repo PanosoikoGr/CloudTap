@@ -40,10 +40,26 @@
   - **System Info**: Instance types, platforms, key pairs, availability zones
   - **Multi-region scanning** with comprehensive summaries
 
+- **ECS Container Analysis**
+
+  - **Container Orchestration**: Clusters, services, tasks, and container instances across all regions
+  - **Network Exposure**: Public/private IPs, ENI attachments, load balancer configurations, service discovery
+  - **Attack Surface**: Security groups, network configurations, public task access, function URLs, execute command capabilities
+  - **Container Security**: Task definitions, environment variables, secrets, privileged containers, resource limits
+  - **Service Architecture**: Auto-scaling policies, deployment configurations, health checks, service registries
+  - **Data & Access**: IAM task roles, execution roles, volume mounts, logging configurations, container insights
+  - **Runtime Analysis**: Running/stopped tasks, container status, resource utilization, network bindings
+  - **Multi-region scanning** with detailed cluster topology and comprehensive security assessments
+
 - **Assumable Role Detection**
   - Analyzes trust policies of IAM roles to identify assumable roles based on your current identity.  
   - Attempts to assume those roles and logs results.
   - Gets the attached policies of that role
+
+- **Priv Escalation Suggester**
+  - Grabs all permissions.
+  - Checks what combinations of permissions you have to escalate your priv.
+  - Suggest paths and inludes links
 
 - **Formatted JSON Output**  
   - Policies and secrets are printed with clear formatting for easy review and logging.

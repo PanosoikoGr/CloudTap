@@ -500,6 +500,416 @@ def analyze_lambda_functions_in_region(lambda_client, lambda_dir, region):
         logger.error(error_msg)
         print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
         return 0, 0
+def analyze_ecs_cluster(ecs_client, cluster_name, region):
+    """Analyze a specific ECS cluster and its resources"""
+    try:
+        print(f"\n{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}🚢 ECS Cluster: {cluster_name}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
+        
+        # Get cluster details
+        cluster_response = ecs_client.describe_clusters(clusters=[cluster_name])
+        clusters = cluster_response.get('clusters', [])
+        
+        if not clusters:
+            print(f"{Fore.RED}❌ Cluster {cluster_name} not found{Style.RESET_ALL}")
+            return
+        
+        cluster = clusters[0]
+        
+        # Display cluster information
+        print(f"{Fore.MAGENTA}📋 Cluster Information:{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}Cluster Name: {cluster.get('clusterName')}{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}Status: {cluster.get('status')}{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}Running Tasks: {cluster.get('runningTasksCount', 0)}{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}Pending Tasks: {cluster.get('pendingTasksCount', 0)}{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}Services: {cluster.get('servicesCount', 0)}{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}Registered Container Instances: {cluster.get('registeredContainerInstancesCount', 0)}{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}ARN: {cluster.get('clusterArn')}{Style.RESET_ALL}")
+        
+        # Display cluster settings
+        settings = cluster.get('settings', [])
+        if settings:
+            print(f"\n{Fore.CYAN}⚙️ Cluster Settings:{Style.RESET_ALL}")
+            for setting in settings:
+                print(f"  {Fore.GREEN}{setting.get('name')}: {setting.get('value')}{Style.RESET_ALL}")
+        
+        # Display cluster configuration
+        config = cluster.get('configuration', {})
+        if config:
+            print(f"\n{Fore.CYAN}🔧 Cluster Configuration:{Style.RESET_ALL}")
+            
+            # Execute command configuration
+            execute_command_config = config.get('executeCommandConfiguration', {})
+            if execute_command_config:
+                print(f"  {Fore.YELLOW}Execute Command Configuration:{Style.RESET_ALL}")
+                print(f"    {Fore.GREEN}KMS Key ID: {execute_command_config.get('kmsKeyId', 'N/A')}{Style.RESET_ALL}")
+                print(f"    {Fore.GREEN}Logging: {execute_command_config.get('logging', 'N/A')}{Style.RESET_ALL}")
+                
+                # Check for potentially risky execute command settings
+                if execute_command_config.get('logging') == 'NONE':
+                    print(f"    {Fore.RED}⚠️  WARNING: Execute command logging is disabled!{Style.RESET_ALL}")
+                    logger.warning(f"ECS cluster {cluster_name} has execute command logging disabled")
+        
+        # Display tags
+        tags = cluster.get('tags', [])
+        if tags:
+            print(f"\n{Fore.CYAN}🏷️ Cluster Tags:{Style.RESET_ALL}")
+            for tag in tags:
+                print(f"  {Fore.GREEN}{tag.get('key')}: {tag.get('value')}{Style.RESET_ALL}")
+        
+        # Analyze services in the cluster
+        analyze_ecs_services(ecs_client, cluster_name, region)
+        
+        # Analyze tasks in the cluster
+        analyze_ecs_tasks(ecs_client, cluster_name, region)
+        
+        # Analyze container instances
+        analyze_container_instances(ecs_client, cluster_name, region)
+        
+    except Exception as e:
+        error_msg = f"Error analyzing ECS cluster {cluster_name}: {e}"
+        logger.error(error_msg)
+        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+
+def analyze_ecs_services(ecs_client, cluster_name, region):
+    """Analyze ECS services in a cluster"""
+    try:
+        print(f"\n{Fore.BLUE}🔧 Analyzing ECS Services in cluster {cluster_name}...{Style.RESET_ALL}")
+        
+        # List services
+        services_response = ecs_client.list_services(cluster=cluster_name)
+        service_arns = services_response.get('serviceArns', [])
+        
+        if not service_arns:
+            print(f"{Fore.YELLOW}No services found in cluster {cluster_name}{Style.RESET_ALL}")
+            return
+        
+        # Describe services
+        services_detail = ecs_client.describe_services(cluster=cluster_name, services=service_arns)
+        services = services_detail.get('services', [])
+        
+        print(f"{Fore.GREEN}Found {len(services)} services:{Style.RESET_ALL}")
+        
+        for service in services:
+            print(f"\n{Fore.CYAN}  🔧 Service: {service.get('serviceName')}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}Status: {service.get('status')}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}Task Definition: {service.get('taskDefinition')}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}Desired Count: {service.get('desiredCount', 0)}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}Running Count: {service.get('runningCount', 0)}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}Pending Count: {service.get('pendingCount', 0)}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}Launch Type: {service.get('launchType', 'N/A')}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}Platform Version: {service.get('platformVersion', 'N/A')}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}Created At: {service.get('createdAt', 'N/A')}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}ARN: {service.get('serviceArn')}{Style.RESET_ALL}")
+            
+            # Network configuration
+            network_config = service.get('networkConfiguration', {})
+            if network_config:
+                awsvpc_config = network_config.get('awsvpcConfiguration', {})
+                if awsvpc_config:
+                    print(f"    {Fore.YELLOW}Network Configuration:{Style.RESET_ALL}")
+                    print(f"      {Fore.GREEN}Subnets: {', '.join(awsvpc_config.get('subnets', []))}{Style.RESET_ALL}")
+                    print(f"      {Fore.GREEN}Security Groups: {', '.join(awsvpc_config.get('securityGroups', []))}{Style.RESET_ALL}")
+                    print(f"      {Fore.GREEN}Public IP: {awsvpc_config.get('assignPublicIp', 'N/A')}{Style.RESET_ALL}")
+                    
+                    # Check for public IP assignment
+                    if awsvpc_config.get('assignPublicIp') == 'ENABLED':
+                        print(f"      {Fore.YELLOW}⚠️  Service assigns public IPs to tasks{Style.RESET_ALL}")
+            
+            # Load balancers
+            load_balancers = service.get('loadBalancers', [])
+            if load_balancers:
+                print(f"    {Fore.CYAN}Load Balancers:{Style.RESET_ALL}")
+                for lb in load_balancers:
+                    print(f"      {Fore.GREEN}Target Group ARN: {lb.get('targetGroupArn', 'N/A')}{Style.RESET_ALL}")
+                    print(f"      {Fore.GREEN}Load Balancer Name: {lb.get('loadBalancerName', 'N/A')}{Style.RESET_ALL}")
+                    print(f"      {Fore.GREEN}Container Name: {lb.get('containerName', 'N/A')}{Style.RESET_ALL}")
+                    print(f"      {Fore.GREEN}Container Port: {lb.get('containerPort', 'N/A')}{Style.RESET_ALL}")
+            
+            # Service registries
+            service_registries = service.get('serviceRegistries', [])
+            if service_registries:
+                print(f"    {Fore.CYAN}Service Discovery:{Style.RESET_ALL}")
+                for registry in service_registries:
+                    print(f"      {Fore.GREEN}Registry ARN: {registry.get('registryArn')}{Style.RESET_ALL}")
+                    print(f"      {Fore.GREEN}Container Name: {registry.get('containerName', 'N/A')}{Style.RESET_ALL}")
+            
+            # Deployment configuration
+            deployment_config = service.get('deploymentConfiguration', {})
+            if deployment_config:
+                print(f"    {Fore.CYAN}Deployment Configuration:{Style.RESET_ALL}")
+                print(f"      {Fore.GREEN}Maximum Percent: {deployment_config.get('maximumPercent', 'N/A')}%{Style.RESET_ALL}")
+                print(f"      {Fore.GREEN}Minimum Healthy Percent: {deployment_config.get('minimumHealthyPercent', 'N/A')}%{Style.RESET_ALL}")
+            
+            # Tags
+            try:
+                tags_response = ecs_client.list_tags_for_resource(resourceArn=service.get('serviceArn'))
+                tags = tags_response.get('tags', [])
+                if tags:
+                    print(f"    {Fore.CYAN}Tags:{Style.RESET_ALL}")
+                    for tag in tags:
+                        print(f"      {Fore.GREEN}{tag.get('key')}: {tag.get('value')}{Style.RESET_ALL}")
+            except Exception as e:
+                logger.debug(f"Error getting tags for service {service.get('serviceName')}: {e}")
+        
+    except Exception as e:
+        error_msg = f"Error analyzing ECS services in cluster {cluster_name}: {e}"
+        logger.error(error_msg)
+        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+
+def analyze_ecs_tasks(ecs_client, cluster_name, region):
+    """Analyze ECS tasks in a cluster"""
+    try:
+        print(f"\n{Fore.BLUE}📋 Analyzing ECS Tasks in cluster {cluster_name}...{Style.RESET_ALL}")
+        
+        # List running tasks
+        running_tasks_response = ecs_client.list_tasks(cluster=cluster_name, desiredStatus='RUNNING')
+        running_task_arns = running_tasks_response.get('taskArns', [])
+        
+        # List stopped tasks (recent ones)
+        stopped_tasks_response = ecs_client.list_tasks(cluster=cluster_name, desiredStatus='STOPPED')
+        stopped_task_arns = stopped_tasks_response.get('taskArns', [])
+        
+        all_task_arns = running_task_arns + stopped_task_arns
+        
+        if not all_task_arns:
+            print(f"{Fore.YELLOW}No tasks found in cluster {cluster_name}{Style.RESET_ALL}")
+            return
+        
+        print(f"{Fore.GREEN}Found {len(running_task_arns)} running tasks and {len(stopped_task_arns)} stopped tasks{Style.RESET_ALL}")
+        
+        # Describe tasks (limit to avoid overwhelming output)
+        tasks_to_describe = all_task_arns[:20]  # Limit to first 20 tasks
+        if len(all_task_arns) > 20:
+            print(f"{Fore.YELLOW}Showing details for first 20 tasks (total: {len(all_task_arns)}){Style.RESET_ALL}")
+        
+        if tasks_to_describe:
+            tasks_detail = ecs_client.describe_tasks(cluster=cluster_name, tasks=tasks_to_describe)
+            tasks = tasks_detail.get('tasks', [])
+            
+            for task in tasks:
+                print(f"\n{Fore.CYAN}  📋 Task: {task.get('taskArn', '').split('/')[-1]}{Style.RESET_ALL}")
+                print(f"    {Fore.GREEN}Task Definition: {task.get('taskDefinitionArn', '').split('/')[-1]}{Style.RESET_ALL}")
+                print(f"    {Fore.GREEN}Last Status: {task.get('lastStatus')}{Style.RESET_ALL}")
+                print(f"    {Fore.GREEN}Desired Status: {task.get('desiredStatus')}{Style.RESET_ALL}")
+                print(f"    {Fore.GREEN}Health Status: {task.get('healthStatus', 'N/A')}{Style.RESET_ALL}")
+                print(f"    {Fore.GREEN}Launch Type: {task.get('launchType', 'N/A')}{Style.RESET_ALL}")
+                print(f"    {Fore.GREEN}Platform Version: {task.get('platformVersion', 'N/A')}{Style.RESET_ALL}")
+                print(f"    {Fore.GREEN}CPU/Memory: {task.get('cpu', 'N/A')}/{task.get('memory', 'N/A')}{Style.RESET_ALL}")
+                print(f"    {Fore.GREEN}Created At: {task.get('createdAt', 'N/A')}{Style.RESET_ALL}")
+                print(f"    {Fore.GREEN}Started At: {task.get('startedAt', 'N/A')}{Style.RESET_ALL}")
+                
+                if task.get('stoppedAt'):
+                    print(f"    {Fore.YELLOW}Stopped At: {task.get('stoppedAt')}{Style.RESET_ALL}")
+                    print(f"    {Fore.YELLOW}Stop Code: {task.get('stopCode', 'N/A')}{Style.RESET_ALL}")
+                    if task.get('stoppedReason'):
+                        print(f"    {Fore.YELLOW}Stop Reason: {task.get('stoppedReason')}{Style.RESET_ALL}")
+                
+                # Container information
+                containers = task.get('containers', [])
+                if containers:
+                    print(f"    {Fore.CYAN}Containers ({len(containers)}):{Style.RESET_ALL}")
+                    for container in containers:
+                        print(f"      {Fore.GREEN}Name: {container.get('name')}{Style.RESET_ALL}")
+                        print(f"      {Fore.GREEN}Last Status: {container.get('lastStatus')}{Style.RESET_ALL}")
+                        print(f"      {Fore.GREEN}Health Status: {container.get('healthStatus', 'N/A')}{Style.RESET_ALL}")
+                        
+                        # Network bindings (port mappings)
+                        network_bindings = container.get('networkBindings', [])
+                        if network_bindings:
+                            print(f"      {Fore.YELLOW}Network Bindings:{Style.RESET_ALL}")
+                            for binding in network_bindings:
+                                print(f"        {Fore.GREEN}Host Port: {binding.get('hostPort')} -> Container Port: {binding.get('containerPort')} ({binding.get('protocol', 'tcp')}){Style.RESET_ALL}")
+                        
+                        # Network interfaces (for awsvpc mode)
+                        network_interfaces = container.get('networkInterfaces', [])
+                        if network_interfaces:
+                            print(f"      {Fore.YELLOW}Network Interfaces:{Style.RESET_ALL}")
+                            for interface in network_interfaces:
+                                print(f"        {Fore.GREEN}Private IP: {interface.get('privateIpv4Address')}{Style.RESET_ALL}")
+                                if interface.get('publicIpv4Address'):
+                                    print(f"        {Fore.RED}Public IP: {interface.get('publicIpv4Address')}{Style.RESET_ALL}")
+                
+                # Task attachments (ENIs, etc.)
+                attachments = task.get('attachments', [])
+                if attachments:
+                    print(f"    {Fore.CYAN}Attachments:{Style.RESET_ALL}")
+                    for attachment in attachments:
+                        print(f"      {Fore.GREEN}Type: {attachment.get('type')}{Style.RESET_ALL}")
+                        print(f"      {Fore.GREEN}Status: {attachment.get('status')}{Style.RESET_ALL}")
+                        
+                        # ENI details
+                        details = attachment.get('details', [])
+                        for detail in details:
+                            if detail.get('name') == 'networkInterfaceId':
+                                print(f"      {Fore.GREEN}ENI ID: {detail.get('value')}{Style.RESET_ALL}")
+                
+                # Tags
+                try:
+                    tags_response = ecs_client.list_tags_for_resource(resourceArn=task.get('taskArn'))
+                    tags = tags_response.get('tags', [])
+                    if tags:
+                        print(f"    {Fore.CYAN}Tags:{Style.RESET_ALL}")
+                        for tag in tags:
+                            print(f"      {Fore.GREEN}{tag.get('key')}: {tag.get('value')}{Style.RESET_ALL}")
+                except Exception as e:
+                    logger.debug(f"Error getting tags for task: {e}")
+        
+    except Exception as e:
+        error_msg = f"Error analyzing ECS tasks in cluster {cluster_name}: {e}"
+        logger.error(error_msg)
+        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+
+def analyze_container_instances(ecs_client, cluster_name, region):
+    """Analyze container instances in an ECS cluster"""
+    try:
+        print(f"\n{Fore.BLUE}💻 Analyzing Container Instances in cluster {cluster_name}...{Style.RESET_ALL}")
+        
+        # List container instances
+        instances_response = ecs_client.list_container_instances(cluster=cluster_name)
+        instance_arns = instances_response.get('containerInstanceArns', [])
+        
+        if not instance_arns:
+            print(f"{Fore.YELLOW}No container instances found in cluster {cluster_name}{Style.RESET_ALL}")
+            return
+        
+        # Describe container instances
+        instances_detail = ecs_client.describe_container_instances(cluster=cluster_name, containerInstances=instance_arns)
+        instances = instances_detail.get('containerInstances', [])
+        
+        print(f"{Fore.GREEN}Found {len(instances)} container instances:{Style.RESET_ALL}")
+        
+        for instance in instances:
+            print(f"\n{Fore.CYAN}  💻 Container Instance: {instance.get('containerInstanceArn', '').split('/')[-1]}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}EC2 Instance ID: {instance.get('ec2InstanceId')}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}Status: {instance.get('status')}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}Agent Connected: {instance.get('agentConnected')}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}Running Tasks: {instance.get('runningTasksCount', 0)}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}Pending Tasks: {instance.get('pendingTasksCount', 0)}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}Agent Version: {instance.get('versionInfo', {}).get('agentVersion', 'N/A')}{Style.RESET_ALL}")
+            print(f"    {Fore.GREEN}Docker Version: {instance.get('versionInfo', {}).get('dockerVersion', 'N/A')}{Style.RESET_ALL}")
+            
+            # Resource information
+            registered_resources = instance.get('registeredResources', [])
+            remaining_resources = instance.get('remainingResources', [])
+            
+            if registered_resources or remaining_resources:
+                print(f"    {Fore.CYAN}Resources:{Style.RESET_ALL}")
+                
+                # Create resource maps for easier comparison
+                registered_map = {r.get('name'): r.get('integerValue', r.get('stringSetValue')) for r in registered_resources}
+                remaining_map = {r.get('name'): r.get('integerValue', r.get('stringSetValue')) for r in remaining_resources}
+                
+                for resource_name in registered_map:
+                    registered_val = registered_map.get(resource_name, 0)
+                    remaining_val = remaining_map.get(resource_name, 0)
+                    used_val = registered_val - remaining_val if isinstance(registered_val, int) and isinstance(remaining_val, int) else 'N/A'
+                    
+                    print(f"      {Fore.GREEN}{resource_name}: {used_val}/{registered_val} used{Style.RESET_ALL}")
+            
+            # Attributes
+            attributes = instance.get('attributes', [])
+            if attributes:
+                print(f"    {Fore.CYAN}Attributes:{Style.RESET_ALL}")
+                for attr in attributes:
+                    print(f"      {Fore.GREEN}{attr.get('name')}: {attr.get('value', 'N/A')}{Style.RESET_ALL}")
+            
+            # Tags
+            tags = instance.get('tags', [])
+            if tags:
+                print(f"    {Fore.CYAN}Tags:{Style.RESET_ALL}")
+                for tag in tags:
+                    print(f"      {Fore.GREEN}{tag.get('key')}: {tag.get('value')}{Style.RESET_ALL}")
+        
+    except Exception as e:
+        error_msg = f"Error analyzing container instances in cluster {cluster_name}: {e}"
+        logger.error(error_msg)
+        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+
+def analyze_ecs_clusters(session, current_region):
+    """Comprehensive ECS clusters analysis"""
+    print(f"\n{Fore.YELLOW}=== ECS Clusters Analysis ==={Style.RESET_ALL}")
+    logger.info("Starting ECS clusters analysis")
+    
+    # Ask user about region scanning
+    search_all_regions = input(f"{Fore.GREEN}Search ECS clusters in all regions? (y/n) [default: current region only]: {Style.RESET_ALL}").strip().lower()
+    
+    regions_to_scan = []
+    if search_all_regions in ['y', 'yes']:
+        print(f"{Fore.BLUE}Getting all available regions...{Style.RESET_ALL}")
+        try:
+            ec2_client = session.client('ec2', region_name=current_region)
+            regions_response = ec2_client.describe_regions()
+            regions_to_scan = [region['RegionName'] for region in regions_response['Regions']]
+            print(f"{Fore.GREEN}Will scan {len(regions_to_scan)} regions: {', '.join(regions_to_scan)}{Style.RESET_ALL}")
+            logger.info(f"Scanning ECS clusters in all {len(regions_to_scan)} regions")
+        except Exception as e:
+            print(f"{Fore.RED}❌ Error getting regions dynamically: {e}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Using hardcoded region list...{Style.RESET_ALL}")
+            # You'll need to define AWS_REGIONS or use a hardcoded list
+            regions_to_scan = [
+                'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
+                'eu-west-1', 'eu-west-2', 'eu-west-3', 'eu-central-1',
+                'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1'
+            ]
+    else:
+        regions_to_scan = [current_region]
+        print(f"{Fore.CYAN}Scanning ECS clusters in current region: {current_region}{Style.RESET_ALL}")
+        logger.info(f"Scanning ECS clusters in current region only: {current_region}")
+    
+    total_clusters_found = 0
+    total_services_found = 0
+    total_tasks_found = 0
+    
+    # Process each region
+    for region in regions_to_scan:
+        print(f"\n{Fore.MAGENTA}🌍 Scanning region: {region}{Style.RESET_ALL}")
+        logger.info(f"Scanning ECS clusters in region: {region}")
+        
+        try:
+            ecs_client = session.client("ecs", region_name=region)
+            
+            # List clusters in this region
+            clusters_response = ecs_client.list_clusters()
+            cluster_arns = clusters_response.get('clusterArns', [])
+            
+            if not cluster_arns:
+                print(f"{Fore.YELLOW}No ECS clusters found in {region}{Style.RESET_ALL}")
+                continue
+            
+            total_clusters_found += len(cluster_arns)
+            print(f"{Fore.GREEN}Found {len(cluster_arns)} ECS clusters in {region}{Style.RESET_ALL}")
+            
+            # Analyze each cluster
+            for cluster_arn in cluster_arns:
+                cluster_name = cluster_arn.split('/')[-1]
+                analyze_ecs_cluster(ecs_client, cluster_name, region)
+                
+                # Count services and tasks for summary
+                try:
+                    services_response = ecs_client.list_services(cluster=cluster_name)
+                    total_services_found += len(services_response.get('serviceArns', []))
+                    
+                    running_tasks = ecs_client.list_tasks(cluster=cluster_name, desiredStatus='RUNNING')
+                    stopped_tasks = ecs_client.list_tasks(cluster=cluster_name, desiredStatus='STOPPED')
+                    total_tasks_found += len(running_tasks.get('taskArns', [])) + len(stopped_tasks.get('taskArns', []))
+                except Exception as e:
+                    logger.error(f"Error counting resources in cluster {cluster_name}: {e}")
+            
+        except Exception as e:
+            error_msg = f"Error scanning ECS clusters in region {region}: {e}"
+            logger.error(error_msg)
+            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+    
+    # Final summary
+    print(f"\n{Fore.GREEN}🌍 Multi-Region ECS Summary:{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Regions scanned: {len(regions_to_scan)}{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Total clusters found: {total_clusters_found}{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Total services found: {total_services_found}{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Total tasks found: {total_tasks_found}{Style.RESET_ALL}")
+    
+    logger.info(f"ECS analysis complete across {len(regions_to_scan)} regions: {total_clusters_found} clusters, {total_services_found} services, {total_tasks_found} tasks")
 
 def analyze_ec2_instances(session, current_region):
     """Comprehensive EC2 instance analysis for penetration testing"""
@@ -2522,10 +2932,11 @@ print(f"{Fore.CYAN}2. Analyze SNS Topics{Style.RESET_ALL}")
 print(f"{Fore.CYAN}3. List All SNS Subscriptions{Style.RESET_ALL}")
 print(f"{Fore.CYAN}4. Analyze Beanstalk Environments{Style.RESET_ALL}")
 print(f"{Fore.CYAN}5. Analyze EC2 and EBS{Style.RESET_ALL}")
-print(f"{Fore.RED}6. Run Full Scan{Style.RESET_ALL}")
+print(f"{Fore.CYAN}6. Analyze ECS{Style.RESET_ALL}")
+print(f"{Fore.RED}7. Run Full Scan{Style.RESET_ALL}")
 print(f"{Fore.CYAN}Press Enter to skip optional analyses{Style.RESET_ALL}")
 
-choice = input(f"{Fore.GREEN}Enter your choice (1-6) or press Enter to continue: {Style.RESET_ALL}").strip()
+choice = input(f"{Fore.GREEN}Enter your choice (1-7) or press Enter to continue: {Style.RESET_ALL}").strip()
 
 if choice == "1":
     analyze_lambda_functions(session, region)
@@ -2538,11 +2949,14 @@ elif choice == "4":
 elif choice == "5":
     analyze_ec2_instances(session, region)
 elif choice == "6":
+    analyze_ecs_clusters(session, region)
+elif choice == "7":
     analyze_lambda_functions(session, region)
     analyze_sns_topics(session, region)
     list_all_sns_subscriptions(session, region)
     analyze_beanstalk_environments(session, region)
     analyze_ec2_instances(session, region)
+    analyze_ecs_clusters(session, region)
 elif choice == "":
     print(f"{Fore.BLUE}Skipping optional analyses...{Style.RESET_ALL}")
 else:

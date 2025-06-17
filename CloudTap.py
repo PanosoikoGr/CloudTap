@@ -4,7 +4,6 @@ import os
 from datetime import datetime
 from pathlib import Path
 from colorama import init, Fore, Back, Style
-from tqdm import tqdm
 from loguru import logger
 import sys
 import zipfile
@@ -12,7 +11,9 @@ import requests
 from urllib.parse import urlparse
 import base64
 import argparse
-from botocore.exceptions import ProfileNotFound
+from botocore.exceptions import ProfileNotFound,ClientError,EndpointConnectionError
+from tqdm import tqdm
+from botocore.config import Config
 
 permissions = [] #Push permission to this list
 
@@ -2550,6 +2551,63 @@ def extract_permissions_from_policy(policy_document):
                     if action not in permissions:
                         permissions.append(action)
 
+def camel_to_snake(name):
+    """Convert CamelCase API call name to boto3 method format"""
+    import re
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+def bruteforce_aws_permissions_from_json(json_path, session):
+    global permissions
+
+    valid_services = boto3.session.Session().get_available_services()
+
+    with open(json_path, 'r') as f:
+        services = json.load(f)
+
+    for service in services:
+        svc_name = service["svc_name"]
+        api_calls = service["api_calls"]
+
+        if svc_name not in valid_services:
+            logger.warning(f"Skipping {svc_name} - not a valid boto3 service")
+            continue
+
+        try:
+            # Add timeouts to prevent hang-ups
+            timeout_config = Config(connect_timeout=3, read_timeout=3, retries={'max_attempts': 1})
+            client = session.client(svc_name, config=timeout_config)
+        except Exception as e:
+            logger.warning(f"Skipping {svc_name} - client init failed: {e}")
+            continue
+
+        with tqdm(total=len(api_calls), desc=f"[{svc_name.upper()}]", unit="call", colour="green") as pbar:
+            for api_call in api_calls:
+                try:
+                    method = getattr(client, camel_to_snake(api_call))
+                    method()
+                    perm_string = f"{svc_name}:{api_call}"
+                    if perm_string not in permissions:
+                        permissions.append(perm_string)
+                except (ClientError, EndpointConnectionError):
+                    # Expected errors: permission denied or endpoint not available
+                    pass
+                except Exception:
+                    # Catch-all for timeouts, hangs, etc.
+                    pass
+                finally:
+                    pbar.update(1)
+
+def ask_to_bruteforce(session):
+    answer = input(f"\n{Fore.YELLOW}⚡ Do you want to brute-force all AWS permissions(Estimated time 5m)? (y/n): {Style.RESET_ALL}").strip().lower()
+    if answer in ['y', 'yes']:
+        json_path = "final_full_aws_service_apis.json"
+        print(f"{Fore.BLUE}🔍 Starting brute-force using {json_path}{Style.RESET_ALL}")
+        bruteforce_aws_permissions_from_json(json_path, session)
+        print(f"{Fore.GREEN}✅ Finished! Permissions granted:{Style.RESET_ALL}")
+        for perm in permissions:
+            print(f"  {Fore.CYAN}{perm}{Style.RESET_ALL}")
+
 # Header
 # -*- coding: utf-8 -*-
 
@@ -3132,6 +3190,9 @@ else:
     print(f"{Fore.CYAN}📋 Role assumption analysis skipped - already using assumed role credentials.{Style.RESET_ALL}")
     print(f"{Fore.BLUE}ℹ️  To analyze role assumptions, run this tool with permanent IAM user credentials.{Style.RESET_ALL}")
     logger.info("Skipping role assumption analysis - already using assumed role credentials")
+
+#Bruteforce permissions
+ask_to_bruteforce(session)
 
 # Analyze permissions
 results = analyzer.analyze_permissions(permissions)

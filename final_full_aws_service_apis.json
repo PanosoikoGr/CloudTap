@@ -1,0 +1,1155 @@
+[
+  {
+    "svc_name": "acm",
+    "api_calls": [
+      "ListCertificates"
+    ]
+  },
+  {
+    "svc_name": "amplify",
+    "api_calls": [
+      "ListApps"
+    ]
+  },
+  {
+    "svc_name": "apigateway",
+    "api_calls": [
+      "GetAccount",
+      "GetDomainNames",
+      "GetUsagePlans",
+      "GetClientCertificates",
+      "GetApiKeys",
+      "GetSdkTypes",
+      "GetVpcLinks",
+      "GetRestApis"
+    ]
+  },
+  {
+    "svc_name": "appmesh",
+    "api_calls": [
+      "ListMeshes"
+    ]
+  },
+  {
+    "svc_name": "appsync",
+    "api_calls": [
+      "ListGraphqlApis"
+    ]
+  },
+  {
+    "svc_name": "athena",
+    "api_calls": [
+      "ListQueryExecutions",
+      "ListNamedQueries",
+      "ListWorkGroups"
+    ]
+  },
+  {
+    "svc_name": "autoscaling",
+    "api_calls": [
+      "DescribeAdjustmentTypes",
+      "DescribeScheduledActions",
+      "DescribeAutoScalingGroups",
+      "DescribeNotificationConfigurations",
+      "DescribeAccountLimits",
+      "DescribePolicies",
+      "DescribeScalingProcessTypes",
+      "DescribeTerminationPolicyTypes",
+      "DescribeScalingActivities",
+      "DescribeAutoScalingNotificationTypes",
+      "DescribeLaunchConfigurations",
+      "DescribeLifecycleHookTypes",
+      "DescribeMetricCollectionTypes",
+      "DescribeTags",
+      "DescribeAutoScalingInstances"
+    ]
+  },
+  {
+    "svc_name": "backup",
+    "api_calls": [
+      "ListBackupVaults",
+      "ListProtectedResources",
+      "ListBackupPlanTemplates",
+      "ListBackupJobs",
+      "GetSupportedResourceTypes",
+      "ListRestoreJobs",
+      "ListBackupPlans"
+    ]
+  },
+  {
+    "svc_name": "batch",
+    "api_calls": [
+      "ListJobs",
+      "DescribeComputeEnvironments",
+      "DescribeJobDefinitions",
+      "DescribeJobQueues"
+    ]
+  },
+  {
+    "svc_name": "chime",
+    "api_calls": [
+      "ListAccounts"
+    ]
+  },
+  {
+    "svc_name": "cloud9",
+    "api_calls": [
+      "ListEnvironments",
+      "DescribeEnvironmentMemberships"
+    ]
+  },
+  {
+    "svc_name": "clouddirectory",
+    "api_calls": [
+      "ListDevelopmentSchemaArns",
+      "ListManagedSchemaArns",
+      "ListDirectories",
+      "ListPublishedSchemaArns"
+    ]
+  },
+  {
+    "svc_name": "cloudformation",
+    "api_calls": [
+      "DescribeStackEvents",
+      "ListExports",
+      "DescribeStackResources",
+      "DescribeAccountLimits",
+      "ListStackSets",
+      "ListStacks",
+      "GetTemplateSummary",
+      "GetTemplate"
+    ]
+  },
+  {
+    "svc_name": "cloudfront",
+    "api_calls": [
+      "ListFieldLevelEncryptionProfiles",
+      "ListCloudFrontOriginAccessIdentities",
+      "ListFieldLevelEncryptionConfigs",
+      "ListDistributions",
+      "ListStreamingDistributions"
+    ]
+  },
+  {
+    "svc_name": "cloudhsm",
+    "api_calls": [
+      "ListHapgs",
+      "ListHsms",
+      "DescribeLunaClient",
+      "ListAvailableZones",
+      "DescribeHsm",
+      "ListLunaClients"
+    ]
+  },
+  {
+    "svc_name": "cloudhsmv2",
+    "api_calls": [
+      "DescribeBackups",
+      "DescribeClusters"
+    ]
+  },
+  {
+    "svc_name": "cloudsearch",
+    "api_calls": [
+      "DescribeDomains",
+      "ListDomainNames"
+    ]
+  },
+  {
+    "svc_name": "cloudtrail",
+    "api_calls": [
+      "DescribeTrails"
+    ]
+  },
+  {
+    "svc_name": "codebuild",
+    "api_calls": [
+      "ListBuilds",
+      "ListProjects",
+      "ListCuratedEnvironmentImages",
+      "ListSourceCredentials"
+    ]
+  },
+  {
+    "svc_name": "codecommit",
+    "api_calls": [
+      "ListRepositories",
+      "GetBranch"
+    ]
+  },
+  {
+    "svc_name": "codedeploy",
+    "api_calls": [
+      "GetDeploymentTarget",
+      "ListGitHubAccountTokenNames",
+      "ListDeploymentConfigs",
+      "BatchGetDeploymentTargets",
+      "ListDeploymentTargets",
+      "ListApplications",
+      "ListOnPremisesInstances",
+      "ListDeployments"
+    ]
+  },
+  {
+    "svc_name": "codepipeline",
+    "api_calls": [
+      "ListActionTypes",
+      "ListPipelines",
+      "ListWebhooks"
+    ]
+  },
+  {
+    "svc_name": "codestar",
+    "api_calls": [
+      "ListProjects",
+      "ListUserProfiles"
+    ]
+  },
+  {
+    "svc_name": "comprehend",
+    "api_calls": [
+      "ListDominantLanguageDetectionJobs",
+      "ListTopicsDetectionJobs",
+      "ListEntitiesDetectionJobs",
+      "ListEntityRecognizers",
+      "ListDocumentClassifiers",
+      "ListSentimentDetectionJobs",
+      "ListKeyPhrasesDetectionJobs",
+      "ListDocumentClassificationJobs"
+    ]
+  },
+  {
+    "svc_name": "datapipeline",
+    "api_calls": [
+      "ListPipelines"
+    ]
+  },
+  {
+    "svc_name": "datasync",
+    "api_calls": [
+      "ListLocations",
+      "ListTaskExecutions",
+      "ListTasks",
+      "ListAgents"
+    ]
+  },
+  {
+    "svc_name": "dax",
+    "api_calls": [
+      "DescribeDefaultParameters",
+      "DescribeSubnetGroups",
+      "DescribeClusters",
+      "DescribeParameterGroups"
+    ]
+  },
+  {
+    "svc_name": "devicefarm",
+    "api_calls": [
+      "ListProjects",
+      "ListOfferingPromotions",
+      "ListOfferings",
+      "GetOfferingStatus",
+      "ListOfferingTransactions",
+      "ListVPCEConfigurations",
+      "ListDeviceInstances",
+      "ListInstanceProfiles",
+      "ListDevices",
+      "GetAccountSettings"
+    ]
+  },
+  {
+    "svc_name": "directconnect",
+    "api_calls": [
+      "DescribeDirectConnectGatewayAssociations",
+      "DescribeConnections",
+      "DescribeDirectConnectGatewayAttachments",
+      "DescribeLags",
+      "DescribeDirectConnectGateways",
+      "DescribeLocations",
+      "DescribeVirtualGateways",
+      "DescribeInterconnects",
+      "DescribeVirtualInterfaces"
+    ]
+  },
+  {
+    "svc_name": "dlm",
+    "api_calls": [
+      "GetLifecyclePolicies"
+    ]
+  },
+  {
+    "svc_name": "dynamodb",
+    "api_calls": [
+      "ListBackups",
+      "ListTables",
+      "DescribeLimits",
+      "ListGlobalTables",
+      "DescribeEndpoints"
+    ]
+  },
+  {
+    "svc_name": "ec2",
+    "api_calls": [
+      "DescribeImages",
+      "DescribeSubnets",
+      "DescribeIamInstanceProfileAssociations",
+      "DescribeNatGateways",
+      "DescribeSpotFleetRequests",
+      "DescribeVpcEndpointConnections",
+      "DescribeVpcEndpointServiceConfigurations",
+      "DescribeVpcClassicLink",
+      "DescribeReservedInstances",
+      "DescribeReservedInstancesModifications",
+      "DescribeSpotPriceHistory",
+      "DescribeTransitGatewayAttachments",
+      "DescribeReservedInstancesOfferings",
+      "DescribeVpcEndpoints",
+      "DescribeSnapshots",
+      "DescribeNetworkAcls",
+      "DescribeRouteTables",
+      "DescribeRegions",
+      "DescribeInstances",
+      "DescribeFleets",
+      "DescribeInstanceCreditSpecifications",
+      "DescribeImportSnapshotTasks",
+      "DescribeClientVpnEndpoints",
+      "DescribeKeyPairs",
+      "DescribeIdFormat",
+      "DescribePublicIpv4Pools",
+      "DescribeScheduledInstances",
+      "DescribeConversionTasks",
+      "DescribeEgressOnlyInternetGateways",
+      "DescribePrincipalIdFormat",
+      "DescribeNetworkInterfacePermissions",
+      "DescribeVpnConnections",
+      "DescribeVpcs",
+      "DescribeNetworkInterfaces",
+      "DescribeSecurityGroups",
+      "DescribeHostReservations",
+      "DescribePrefixLists",
+      "DescribeVpnGateways",
+      "DescribeImportImageTasks",
+      "DescribeClassicLinkInstances",
+      "DescribeVpcPeeringConnections",
+      "DescribeSpotDatafeedSubscription",
+      "DescribeMovingAddresses",
+      "DescribeAvailabilityZones",
+      "DescribeAddresses",
+      "DescribeElasticGpus",
+      "DescribeHosts",
+      "DescribeTransitGateways",
+      "DescribeLaunchTemplateVersions",
+      "DescribeTags",
+      "DescribeDhcpOptions",
+      "DescribeLaunchTemplates",
+      "DescribeVolumeStatus",
+      "DescribePlacementGroups",
+      "DescribeAggregateIdFormat",
+      "DescribeTransitGatewayRouteTables",
+      "DescribeInstanceStatus",
+      "DescribeCustomerGateways",
+      "DescribeInternetGateways",
+      "DescribeHostReservationOfferings",
+      "DescribeBundleTasks",
+      "DescribeVolumesModifications",
+      "DescribeExportTasks",
+      "DescribeVolumes",
+      "DescribeFlowLogs",
+      "DescribeSpotInstanceRequests",
+      "DescribeVpcEndpointServices",
+      "DescribeTransitGatewayVpcAttachments",
+      "DescribeFpgaImages",
+      "DescribeCapacityReservations",
+      "DescribeVpcClassicLinkDnsSupport",
+      "DescribeReservedInstancesListings",
+      "DescribeVpcEndpointConnectionNotifications",
+      "DescribeAccountAttributes"
+    ]
+  },
+  {
+    "svc_name": "ecr",
+    "api_calls": [
+      "DescribeRepositories",
+      "GetAuthorizationToken"
+    ]
+  },
+  {
+    "svc_name": "ecs",
+    "api_calls": [
+      "ListServices",
+      "DescribeClusters",
+      "ListClusters",
+      "ListTasks",
+      "ListTaskDefinitions",
+      "ListContainerInstances",
+      "ListAccountSettings",
+      "ListTaskDefinitionFamilies"
+    ]
+  },
+  {
+    "svc_name": "eks",
+    "api_calls": [
+      "ListClusters"
+    ]
+  },
+  {
+    "svc_name": "elasticache",
+    "api_calls": [
+      "DescribeReservedCacheNodes",
+      "DescribeReservedCacheNodesOfferings",
+      "DescribeCacheSubnetGroups",
+      "DescribeCacheEngineVersions",
+      "ListAllowedNodeTypeModifications",
+      "DescribeCacheSecurityGroups",
+      "DescribeCacheParameterGroups",
+      "DescribeReplicationGroups",
+      "DescribeSnapshots",
+      "DescribeCacheClusters"
+    ]
+  },
+  {
+    "svc_name": "elasticbeanstalk",
+    "api_calls": [
+      "DescribeEnvironmentManagedActionHistory",
+      "DescribePlatformVersion",
+      "DescribeInstancesHealth",
+      "DescribeEnvironmentHealth",
+      "DescribeConfigurationOptions",
+      "DescribeEnvironmentManagedActions",
+      "DescribeEnvironmentResources",
+      "DescribeAccountAttributes"
+    ]
+  },
+  {
+    "svc_name": "elastictranscoder",
+    "api_calls": [
+      "ListPipelines",
+      "ListPresets"
+    ]
+  },
+  {
+    "svc_name": "firehose",
+    "api_calls": [
+      "ListDeliveryStreams"
+    ]
+  },
+  {
+    "svc_name": "fms",
+    "api_calls": [
+      "GetNotificationChannel",
+      "ListMemberAccounts",
+      "ListPolicies",
+      "GetAdminAccount"
+    ]
+  },
+  {
+    "svc_name": "fsx",
+    "api_calls": [
+      "DescribeFileSystems",
+      "DescribeBackups"
+    ]
+  },
+  {
+    "svc_name": "gamelift",
+    "api_calls": [
+      "DescribePlayerSessions",
+      "DescribeGameSessionDetails",
+      "DescribeMatchmakingRuleSets",
+      "DescribeFleetUtilization",
+      "DescribeGameSessions",
+      "DescribeVpcPeeringAuthorizations",
+      "ListAliases",
+      "DescribeVpcPeeringConnections",
+      "DescribeMatchmakingConfigurations",
+      "DescribeFleetAttributes",
+      "ListFleets",
+      "ListBuilds",
+      "DescribeGameSessionQueues",
+      "DescribeEC2InstanceLimits",
+      "DescribeFleetCapacity"
+    ]
+  },
+  {
+    "svc_name": "globalaccelerator",
+    "api_calls": [
+      "ListAccelerators",
+      "DescribeAcceleratorAttributes"
+    ]
+  },
+  {
+    "svc_name": "glue",
+    "api_calls": [
+      "GetClassifiers",
+      "GetDatabases",
+      "GetCrawlers",
+      "ListDevEndpoints",
+      "ListTriggers",
+      "GetTriggers",
+      "ListCrawlers",
+      "ListJobs",
+      "GetDataCatalogEncryptionSettings",
+      "GetConnections",
+      "GetJobs",
+      "GetCrawlerMetrics",
+      "GetDataflowGraph",
+      "GetResourcePolicy",
+      "GetSecurityConfigurations",
+      "GetCatalogImportStatus",
+      "GetDevEndpoints"
+    ]
+  },
+  {
+    "svc_name": "greengrass",
+    "api_calls": [
+      "ListDeviceDefinitions",
+      "GetServiceRoleForAccount",
+      "ListCoreDefinitions",
+      "ListLoggerDefinitions",
+      "ListBulkDeployments",
+      "ListConnectorDefinitions",
+      "ListGroups",
+      "ListSubscriptionDefinitions",
+      "ListFunctionDefinitions",
+      "ListResourceDefinitions"
+    ]
+  },
+  {
+    "svc_name": "guardduty",
+    "api_calls": [
+      "ListInvitations",
+      "GetInvitationsCount",
+      "ListDetectors"
+    ]
+  },
+  {
+    "svc_name": "health",
+    "api_calls": [
+      "DescribeEntityAggregates",
+      "DescribeEventTypes"
+    ]
+  },
+  {
+    "svc_name": "iam",
+    "api_calls": [
+      "ListRoles",
+      "ListAccessKeys",
+      "ListGroups",
+      "ListOpenIDConnectProviders",
+      "GetUser",
+      "ListSAMLProviders",
+      "ListAccountAliases",
+      "GetAccountSummary",
+      "ListMFADevices",
+      "ListServerCertificates",
+      "ListServiceSpecificCredentials",
+      "GetAccountAuthorizationDetails",
+      "ListSSHPublicKeys",
+      "ListSigningCertificates",
+      "ListPolicies",
+      "ListVirtualMFADevices",
+      "ListInstanceProfiles",
+      "ListUsers",
+      "GetCredentialReport",
+      "GetAccountPasswordPolicy"
+    ]
+  },
+  {
+    "svc_name": "inspector",
+    "api_calls": [
+      "ListEventSubscriptions",
+      "DescribeCrossAccountAccessRole",
+      "ListAssessmentTemplates",
+      "ListRulesPackages",
+      "ListAssessmentRuns",
+      "ListFindings",
+      "ListAssessmentTargets"
+    ]
+  },
+  {
+    "svc_name": "iot",
+    "api_calls": [
+      "ListCertificates",
+      "ListStreams",
+      "DescribeEventConfigurations",
+      "ListRoleAliases",
+      "ListOutgoingCertificates",
+      "ListV2LoggingLevels",
+      "DescribeDefaultAuthorizer",
+      "ListThings",
+      "GetLoggingOptions",
+      "DescribeEndpoint",
+      "ListCACertificates",
+      "GetIndexingConfiguration",
+      "ListJobs",
+      "ListActiveViolations",
+      "ListAuditFindings",
+      "ListIndices",
+      "ListThingTypes",
+      "GetEffectivePolicies",
+      "DescribeAccountAuditConfiguration",
+      "ListOTAUpdates",
+      "ListBillingGroups",
+      "ListAuthorizers",
+      "ListThingGroups",
+      "GetRegistrationCode",
+      "ListThingRegistrationTasks",
+      "ListScheduledAudits",
+      "GetV2LoggingOptions",
+      "ListPolicies",
+      "ListTopicRules",
+      "ListSecurityProfiles"
+    ]
+  },
+  {
+    "svc_name": "iotanalytics",
+    "api_calls": [
+      "DescribeLoggingOptions",
+      "ListDatasets",
+      "ListChannels",
+      "ListPipelines",
+      "ListDatastores"
+    ]
+  },
+  {
+    "svc_name": "kafka",
+    "api_calls": [
+      "ListClusters"
+    ]
+  },
+  {
+    "svc_name": "kinesis",
+    "api_calls": [
+      "DescribeStreamConsumer",
+      "ListStreams",
+      "ListShards",
+      "DescribeLimits"
+    ]
+  },
+  {
+    "svc_name": "kinesisanalytics",
+    "api_calls": [
+      "ListApplications"
+    ]
+  },
+  {
+    "svc_name": "kinesisvideo",
+    "api_calls": [
+      "ListStreams",
+      "ListTagsForStream",
+      "DescribeStream"
+    ]
+  },
+  {
+    "svc_name": "kms",
+    "api_calls": [
+      "ListKeys",
+      "ListAliases",
+      "DescribeCustomKeyStores"
+    ]
+  },
+  {
+    "svc_name": "lambda",
+    "api_calls": [
+      "ListLayers",
+      "ListEventSourceMappings",
+      "GetAccountSettings",
+      "ListFunctions"
+    ]
+  },
+  {
+    "svc_name": "lightsail",
+    "api_calls": [
+      "GetInstanceSnapshots",
+      "GetRelationalDatabaseSnapshots",
+      "GetActiveNames",
+      "GetCloudFormationStackRecords",
+      "GetRelationalDatabases",
+      "GetKeyPairs",
+      "GetLoadBalancers",
+      "GetInstances",
+      "GetRegions",
+      "GetExportSnapshotRecords",
+      "GetRelationalDatabaseBlueprints",
+      "GetRelationalDatabaseBundles",
+      "GetOperations",
+      "GetBundles",
+      "GetBlueprints",
+      "GetDisks",
+      "GetDomains",
+      "GetStaticIps",
+      "GetDiskSnapshots"
+    ]
+  },
+  {
+    "svc_name": "machinelearning",
+    "api_calls": [
+      "DescribeMLModels",
+      "DescribeDataSources",
+      "DescribeEvaluations",
+      "DescribeBatchPredictions"
+    ]
+  },
+  {
+    "svc_name": "macie",
+    "api_calls": [
+      "ListS3Resources",
+      "ListMemberAccounts"
+    ]
+  },
+  {
+    "svc_name": "mediaconnect",
+    "api_calls": [
+      "ListEntitlements",
+      "ListFlows"
+    ]
+  },
+  {
+    "svc_name": "mediaconvert",
+    "api_calls": [
+      "ListPresets",
+      "ListJobs",
+      "ListJobTemplates",
+      "ListQueues",
+      "DescribeEndpoints"
+    ]
+  },
+  {
+    "svc_name": "medialive",
+    "api_calls": [
+      "ListInputs",
+      "ListChannels",
+      "ListOfferings",
+      "ListReservations",
+      "ListInputSecurityGroups"
+    ]
+  },
+  {
+    "svc_name": "mediapackage",
+    "api_calls": [
+      "ListChannels",
+      "ListOriginEndpoints"
+    ]
+  },
+  {
+    "svc_name": "mediastore",
+    "api_calls": [
+      "DescribeContainer",
+      "ListContainers"
+    ]
+  },
+  {
+    "svc_name": "mediatailor",
+    "api_calls": [
+      "ListPlaybackConfigurations"
+    ]
+  },
+  {
+    "svc_name": "mq",
+    "api_calls": [
+      "ListConfigurations",
+      "ListBrokers"
+    ]
+  },
+  {
+    "svc_name": "opsworks",
+    "api_calls": [
+      "DescribeMyUserProfile",
+      "DescribeRaidArrays",
+      "DescribeUserProfiles",
+      "DescribeOperatingSystems",
+      "DescribeElasticLoadBalancers",
+      "DescribePermissions",
+      "DescribeVolumes",
+      "DescribeDeployments",
+      "DescribeEcsClusters",
+      "DescribeElasticIps",
+      "DescribeAgentVersions",
+      "DescribeLayers",
+      "DescribeApps",
+      "DescribeCommands",
+      "DescribeInstances"
+    ]
+  },
+  {
+    "svc_name": "organizations",
+    "api_calls": [
+      "ListAWSServiceAccessForOrganization",
+      "ListRoots",
+      "ListAccounts",
+      "ListCreateAccountStatus",
+      "DescribeOrganization",
+      "ListHandshakesForAccount",
+      "ListHandshakesForOrganization"
+    ]
+  },
+  {
+    "svc_name": "pinpoint",
+    "api_calls": [
+      "GetApps"
+    ]
+  },
+  {
+    "svc_name": "polly",
+    "api_calls": [
+      "ListSpeechSynthesisTasks",
+      "DescribeVoices",
+      "ListLexicons"
+    ]
+  },
+  {
+    "svc_name": "pricing",
+    "api_calls": [
+      "DescribeServices"
+    ]
+  },
+  {
+    "svc_name": "ram",
+    "api_calls": [
+      "GetResourceShareInvitations"
+    ]
+  },
+  {
+    "svc_name": "rds",
+    "api_calls": [
+      "DescribeGlobalClusters",
+      "DescribeDBClusterEndpoints",
+      "DescribeDBInstances",
+      "DescribeDBSecurityGroups",
+      "DescribePendingMaintenanceActions",
+      "DescribeSourceRegions",
+      "DescribeDBEngineVersions",
+      "DescribeDBClusterSnapshots",
+      "DescribeReservedDBInstances",
+      "DescribeDBClusterParameterGroups",
+      "DescribeDBSubnetGroups",
+      "DescribeCertificates",
+      "DescribeDBInstanceAutomatedBackups",
+      "DescribeDBParameterGroups",
+      "DescribeOptionGroups",
+      "DescribeDBClusters",
+      "DescribeReservedDBInstancesOfferings",
+      "DescribeEventCategories",
+      "DescribeEventSubscriptions",
+      "DescribeDBSnapshots",
+      "DescribeAccountAttributes"
+    ]
+  },
+  {
+    "svc_name": "redshift",
+    "api_calls": [
+      "DescribeHsmClientCertificates",
+      "DescribeClusterSubnetGroups",
+      "DescribeTableRestoreStatus",
+      "DescribeSnapshotSchedules",
+      "DescribeClusterTracks",
+      "DescribeClusterSecurityGroups",
+      "DescribeClusters",
+      "DescribeReservedNodeOfferings",
+      "DescribeOrderableClusterOptions",
+      "DescribeClusterDbRevisions",
+      "DescribeClusterParameterGroups",
+      "DescribeTags",
+      "DescribeSnapshotCopyGrants",
+      "DescribeClusterVersions",
+      "DescribeEventCategories",
+      "DescribeHsmConfigurations",
+      "DescribeReservedNodes",
+      "DescribeStorage",
+      "DescribeEventSubscriptions",
+      "DescribeAccountAttributes"
+    ]
+  },
+  {
+    "svc_name": "rekognition",
+    "api_calls": [
+      "ListStreamProcessors",
+      "ListCollections"
+    ]
+  },
+  {
+    "svc_name": "robomaker",
+    "api_calls": [
+      "ListSimulationApplications",
+      "ListSimulationJobs",
+      "ListRobotApplications",
+      "ListRobots",
+      "ListFleets",
+      "ListDeploymentJobs"
+    ]
+  },
+  {
+    "svc_name": "route53",
+    "api_calls": [
+      "GetHealthCheckCount",
+      "GetTrafficPolicyInstanceCount",
+      "ListHealthChecks",
+      "ListHostedZonesByName",
+      "ListTrafficPolicyInstances",
+      "ListHostedZones",
+      "ListQueryLoggingConfigs",
+      "GetHostedZoneCount",
+      "ListTrafficPolicies",
+      "ListReusableDelegationSets"
+    ]
+  },
+  {
+    "svc_name": "route53domains",
+    "api_calls": [
+      "ListOperations",
+      "GetContactReachabilityStatus",
+      "ListDomains"
+    ]
+  },
+  {
+    "svc_name": "route53resolver",
+    "api_calls": [
+      "ListResolverEndpoints",
+      "ListResolverRules",
+      "ListResolverRuleAssociations"
+    ]
+  },
+  {
+    "svc_name": "s3",
+    "api_calls": [
+      "ListBuckets"
+    ]
+  },
+  {
+    "svc_name": "sagemaker",
+    "api_calls": [
+      "ListWorkteams",
+      "ListAlgorithms",
+      "ListNotebookInstanceLifecycleConfigs",
+      "ListCodeRepositories",
+      "ListLabelingJobs",
+      "ListEndpoints",
+      "ListEndpointConfigs",
+      "ListSubscribedWorkteams",
+      "ListTransformJobs",
+      "ListTrainingJobs",
+      "ListNotebookInstances",
+      "ListModelPackages",
+      "ListCompilationJobs",
+      "ListModels",
+      "ListHyperParameterTuningJobs"
+    ]
+  },
+  {
+    "svc_name": "secretsmanager",
+    "api_calls": [
+      "GetRandomPassword",
+      "ListSecrets"
+    ]
+  },
+  {
+    "svc_name": "securityhub",
+    "api_calls": [
+      "ListInvitations",
+      "ListEnabledProductsForImport",
+      "GetFindings",
+      "GetInvitationsCount",
+      "GetEnabledStandards",
+      "GetInsights",
+      "GetMasterAccount",
+      "ListMembers"
+    ]
+  },
+  {
+    "svc_name": "servicecatalog",
+    "api_calls": [
+      "ListTagOptions",
+      "ListRecordHistory",
+      "ListProvisionedProductPlans",
+      "ListServiceActions",
+      "ListPortfolios",
+      "ListAcceptedPortfolioShares",
+      "GetAWSOrganizationsAccessStatus"
+    ]
+  },
+  {
+    "svc_name": "shield",
+    "api_calls": [
+      "DescribeEmergencyContactSettings",
+      "DescribeDRTAccess",
+      "ListAttacks",
+      "ListProtections",
+      "GetSubscriptionState",
+      "DescribeProtection",
+      "DescribeSubscription"
+    ]
+  },
+  {
+    "svc_name": "signer",
+    "api_calls": [
+      "ListSigningPlatforms",
+      "ListSigningProfiles",
+      "ListSigningJobs"
+    ]
+  },
+  {
+    "svc_name": "sms",
+    "api_calls": [
+      "GetAppReplicationConfiguration",
+      "GetAppLaunchConfiguration",
+      "ListApps",
+      "GetReplicationJobs",
+      "GetApp",
+      "GetServers",
+      "GetConnectors"
+    ]
+  },
+  {
+    "svc_name": "snowball",
+    "api_calls": [
+      "ListCompatibleImages",
+      "ListClusters",
+      "ListJobs",
+      "GetSnowballUsage",
+      "DescribeAddresses"
+    ]
+  },
+  {
+    "svc_name": "sns",
+    "api_calls": [
+      "GetSMSAttributes",
+      "ListPhoneNumbersOptedOut",
+      "ListTopics",
+      "ListPlatformApplications",
+      "ListSubscriptions"
+    ]
+  },
+  {
+    "svc_name": "sqs",
+    "api_calls": [
+      "ListQueues"
+    ]
+  },
+  {
+    "svc_name": "ssm",
+    "api_calls": [
+      "ListCommands",
+      "ListResourceComplianceSummaries",
+      "DescribeAvailablePatches",
+      "GetInventorySchema",
+      "ListComplianceSummaries",
+      "DescribeAssociation",
+      "DescribeActivations",
+      "ListResourceDataSync",
+      "DescribeMaintenanceWindows",
+      "DescribeMaintenanceWindowSchedule",
+      "DescribePatchBaselines",
+      "DescribePatchGroups",
+      "ListComplianceItems",
+      "GetDefaultPatchBaseline",
+      "DescribeInventoryDeletions",
+      "ListCommandInvocations"
+    ]
+  },
+  {
+    "svc_name": "storagegateway",
+    "api_calls": [
+      "ListVolumes",
+      "ListGateways",
+      "DescribeTapeArchives",
+      "ListFileShares",
+      "ListTapes"
+    ]
+  },
+  {
+    "svc_name": "sts",
+    "api_calls": [
+      "GetSessionToken",
+      "GetCallerIdentity"
+    ]
+  },
+  {
+    "svc_name": "support",
+    "api_calls": [
+      "DescribeServices",
+      "DescribeSeverityLevels",
+      "DescribeCases"
+    ]
+  },
+  {
+    "svc_name": "transcribe",
+    "api_calls": [
+      "ListTranscriptionJobs",
+      "ListVocabularies"
+    ]
+  },
+  {
+    "svc_name": "transfer",
+    "api_calls": [
+      "ListServers"
+    ]
+  },
+  {
+    "svc_name": "translate",
+    "api_calls": [
+      "ListTerminologies"
+    ]
+  },
+  {
+    "svc_name": "waf",
+    "api_calls": [
+      "ListIPSets",
+      "ListByteMatchSets",
+      "ListRegexMatchSets",
+      "GetChangeToken",
+      "ListXssMatchSets",
+      "ListGeoMatchSets",
+      "ListRateBasedRules",
+      "ListRuleGroups",
+      "ListRegexPatternSets",
+      "ListRules",
+      "ListSizeConstraintSets",
+      "ListLoggingConfigurations",
+      "ListActivatedRulesInRuleGroup",
+      "ListSubscribedRuleGroups",
+      "ListSqlInjectionMatchSets"
+    ]
+  },
+  {
+    "svc_name": "workdocs",
+    "api_calls": [
+      "DescribeActivities",
+      "DescribeUsers",
+      "GetResources"
+    ]
+  },
+  {
+    "svc_name": "worklink",
+    "api_calls": [
+      "ListFleets"
+    ]
+  },
+  {
+    "svc_name": "workmail",
+    "api_calls": [
+      "ListOrganizations"
+    ]
+  },
+  {
+    "svc_name": "workspaces",
+    "api_calls": [
+      "DescribeWorkspacesConnectionStatus",
+      "DescribeWorkspaceDirectories",
+      "DescribeWorkspaceBundles",
+      "DescribeIpGroups",
+      "DescribeAccountModifications",
+      "DescribeWorkspaces",
+      "DescribeAccount",
+      "DescribeWorkspaceImages"
+    ]
+  },
+  {
+    "svc_name": "xray",
+    "api_calls": [
+      "GetSamplingRules",
+      "GetGroups",
+      "GetSamplingStatisticSummaries",
+      "GetEncryptionConfig",
+      "GetGroup"
+    ]
+  }
+]

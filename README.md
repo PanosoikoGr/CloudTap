@@ -5,11 +5,17 @@
 ██║     ██║     ██║   ██║██║   ██║██║  ██║   ██║   ██╔══██║██╔═══╝ 
 ╚██████╗███████╗╚██████╔╝╚██████╔╝██████╔╝   ██║   ██║  ██║██║     
  ╚═════╝╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝╚═╝       
-```                                                                   
+```
+https://github.com/user-attachments/assets/ef236848-f054-495d-8f36-b215f9ed9105
+
 ## Features
 
+- **Permissions Bruteforce** 
+  - Uses every permission call API to test which one the user has
+  - Passes them to priv esc suggester to find possible paths
+  
 - **Identity Inspection**  
-  Retrieves and prints details about the current IAM identity using STS.
+  - Retrieves and prints details about the current IAM identity using STS.
 
 - **IAM Policy Enumeration**  
   - Lists attached and inline policies for IAM users.  

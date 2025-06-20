@@ -19,6 +19,10 @@ import subprocess
 
 permissions = []  # Permissions discovered from IAM enumeration
 bruteforced_permissions = []  # Permissions discovered via bruteforce
+attached_policy_details = []   # NEW
+inline_policy_details   = []   # NEW
+group_entries           = []   # NEW
+
 
 # Structure to hold enumeration results for later consumption
 output_data = {
@@ -31,10 +35,17 @@ output_data = {
     "identity": {},
     "permissions": {"enumerated": [], "bruteforced": []},
     "iam": {"users": []},
+    "roles": {
+        "all": [],
+        "matching": [],
+        "attempted": [],
+        "successful": [],
+        "details": {}          # ← new dictionary keyed by role name
+    },
     "s3": {"buckets": []},
     "secrets_manager": {"secrets": []},
     "privilege_escalation": {"paths": []},
-    "ec2": {"regions": {}},
+    "ec2": {"regions": {}, "instances": []},
     "sns": {"topics": [], "subscriptions": []},
     "beanstalk": {"applications": [], "environments": []},
     "lambda": {"functions": []},
@@ -547,6 +558,8 @@ def analyze_lambda_functions_in_region(lambda_client, lambda_dir, region):
         logger.error(error_msg)
         print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
         return 0, 0, []
+
+
 def analyze_ecs_cluster(ecs_client, cluster_name, region):
     """Analyze a specific ECS cluster and its resources"""
     try:
@@ -1555,6 +1568,22 @@ def analyze_ec2_in_region(ec2_client, iam_client, region):
             "security_groups": list(security_groups_seen),
         }
         output_data["ec2"]["regions"][region] = region_entry
+        # right after processing an instance
+        instance_entry = {
+            "region": region,
+            "id": instance_id,
+            "state": instance_state,
+            "public_ip":  public_ip or "",
+            "private_ip": private_ip or "",
+            "type":       instance.get("InstanceType", ""),
+            "ami":        instance.get("ImageId", ""),
+            "key_pair":   instance.get("KeyName", ""),
+            "iam_profile": profile_arn if iam_instance_profile else "",
+            "security_groups": [sg["GroupId"] for sg in security_groups],
+            "volumes":   [bd["Ebs"]["VolumeId"]
+                        for bd in block_devices if bd.get("Ebs")],
+        }
+        output_data.setdefault("ec2", {}).setdefault("instances", []).append(instance_entry)
 
         return len(instances), running_instances, total_volumes, len(security_groups_seen)
         
@@ -2113,122 +2142,146 @@ def list_all_sns_subscriptions(session, current_region):
     logger.info(f"Total SNS subscriptions found: {total_subscriptions}")
 
 def analyze_role_permissions(iam_client, role_name):
-    """Analyze and display all permissions for a given role"""
+    """Analyze and display all permissions for a given role.
+       Returns a dict with managed_policies, inline_policies, permissions.
+    """
     print(f"    {Fore.BLUE}📋 Analyzing permissions for role '{role_name}'...{Style.RESET_ALL}")
-    
+
+    # ── collectors for JSON output ──────────────────────────
+    managed_details = []   # full docs for every attached managed policy
+    inline_details  = []   # full docs for every inline policy
+    all_permissions = []   # flat list of allowed actions
+
     try:
-        # Get attached managed policies
-        managed_policies_response = iam_client.list_attached_role_policies(RoleName=role_name)
-        managed_policies = managed_policies_response.get('AttachedPolicies', [])
-        
-        # Get inline policies
-        inline_policies_response = iam_client.list_role_policies(RoleName=role_name)
-        inline_policies = inline_policies_response.get('PolicyNames', [])
-        
+        # 1) Attached managed policies
+        managed_policies = iam_client.list_attached_role_policies(
+            RoleName=role_name
+        ).get("AttachedPolicies", [])
+
+        # 2) Inline policies
+        inline_policies = iam_client.list_role_policies(
+            RoleName=role_name
+        ).get("PolicyNames", [])
+
         print(f"    {Fore.CYAN}  - Managed Policies: {len(managed_policies)}{Style.RESET_ALL}")
         print(f"    {Fore.CYAN}  - Inline Policies: {len(inline_policies)}{Style.RESET_ALL}")
-        
-        all_permissions = []
-        
-        # Process managed policies
+
+        # ─────────────────────────────────────────────────────
+        # Process MANAGED policies
+        # ─────────────────────────────────────────────────────
         for policy in managed_policies:
-            policy_arn = policy['PolicyArn']
-            policy_name = policy['PolicyName']
+            policy_arn  = policy["PolicyArn"]
+            policy_name = policy["PolicyName"]
             print(f"    {Fore.YELLOW}    📄 Managed Policy: {policy_name}{Style.RESET_ALL}")
             print(f"    {Fore.CYAN}       ARN: {policy_arn}{Style.RESET_ALL}")
-            
+
             try:
-                # Get policy versions
-                policy_versions = iam_client.list_policy_versions(PolicyArn=policy_arn)
+                versions = iam_client.list_policy_versions(PolicyArn=policy_arn)
                 default_version = None
-                
+
                 print(f"    {Fore.BLUE}       Policy Versions:{Style.RESET_ALL}")
-                for version in policy_versions['Versions']:
-                    version_id = version['VersionId']
-                    is_default = version['IsDefaultVersion']
-                    created_date = version['CreateDate']
-                    
-                    print(f"    {Fore.CYAN}         - Version {version_id} {'(DEFAULT)' if is_default else ''} - Created: {created_date}{Style.RESET_ALL}")
-                    
+                for v in versions["Versions"]:
+                    vid        = v["VersionId"]
+                    is_default = v["IsDefaultVersion"]
+                    cdate      = v["CreateDate"]
+                    tag        = "(DEFAULT)" if is_default else ""
+                    print(f"    {Fore.CYAN}         - Version {vid} {tag} - Created: {cdate}{Style.RESET_ALL}")
                     if is_default:
-                        default_version = version_id
-                
-                # Get the default version policy document
+                        default_version = vid
+
                 if default_version:
-                    policy_version = iam_client.get_policy_version(
+                    pv = iam_client.get_policy_version(
                         PolicyArn=policy_arn,
                         VersionId=default_version
                     )
-                    policy_document = policy_version['PolicyVersion']['Document']
-                    
+                    doc = pv["PolicyVersion"]["Document"]
+
                     print(f"    {Fore.GREEN}       Default Version ({default_version}) Permissions:{Style.RESET_ALL}")
-                    print_policy_document(policy_document, indent="         ")
-                    
-                    # Extract permissions for summary
-                    if 'Statement' in policy_document:
-                        for statement in policy_document['Statement']:
-                            if statement.get('Effect') == 'Allow':
-                                actions = statement.get('Action', [])
+                    print_policy_document(doc, indent="         ")
+
+                    # ╭─ collect for JSON
+                    managed_details.append({
+                        "name":            policy_name,
+                        "arn":             policy_arn,
+                        "default_version": default_version,
+                        "document":        doc
+                    })
+                    # ╰─ extract allowed actions
+                    if "Statement" in doc:
+                        for stmt in doc["Statement"]:
+                            if stmt.get("Effect") == "Allow":
+                                actions = stmt.get("Action", [])
                                 if isinstance(actions, str):
                                     actions = [actions]
                                 all_permissions.extend(actions)
-                                
-            except Exception as policy_error:
-                print(f"    {Fore.RED}       ❌ Error reading policy: {policy_error}{Style.RESET_ALL}")
-        
-        # Process inline policies
+
+            except Exception as err:
+                print(f"    {Fore.RED}       ❌ Error reading policy: {err}{Style.RESET_ALL}")
+
+        # ─────────────────────────────────────────────────────
+        # Process INLINE policies
+        # ─────────────────────────────────────────────────────
         for policy_name in inline_policies:
             print(f"    {Fore.YELLOW}    📄 Inline Policy: {policy_name}{Style.RESET_ALL}")
-            
             try:
-                inline_policy = iam_client.get_role_policy(RoleName=role_name, PolicyName=policy_name)
-                policy_document = inline_policy['PolicyDocument']
-                
+                inline_policy = iam_client.get_role_policy(
+                    RoleName=role_name, PolicyName=policy_name
+                )
+                doc = inline_policy["PolicyDocument"]
+
                 print(f"    {Fore.GREEN}       Policy Document:{Style.RESET_ALL}")
-                print_policy_document(policy_document, indent="         ")
-                
-                # Extract permissions for summary
-                if 'Statement' in policy_document:
-                    for statement in policy_document['Statement']:
-                        if statement.get('Effect') == 'Allow':
-                            actions = statement.get('Action', [])
+                print_policy_document(doc, indent="         ")
+
+                # collect full doc
+                inline_details.append({
+                    "name":     policy_name,
+                    "document": doc
+                })
+
+                # extract actions
+                if "Statement" in doc:
+                    for stmt in doc["Statement"]:
+                        if stmt.get("Effect") == "Allow":
+                            actions = stmt.get("Action", [])
                             if isinstance(actions, str):
                                 actions = [actions]
                             all_permissions.extend(actions)
-                            
-            except Exception as inline_error:
-                print(f"    {Fore.RED}       ❌ Error reading inline policy: {inline_error}{Style.RESET_ALL}")
-        
-        # Show permission summary
+
+            except Exception as err:
+                print(f"    {Fore.RED}       ❌ Error reading inline policy: {err}{Style.RESET_ALL}")
+
+        # ─────────────────────────────────────────────────────
+        # Permission summary (prints unchanged)
+        # ─────────────────────────────────────────────────────
         if all_permissions:
-            unique_permissions = list(set(all_permissions))
-            print(f"    {Fore.MAGENTA}    📊 Permission Summary ({len(unique_permissions)} unique actions):{Style.RESET_ALL}")
-            
-            # Group permissions by service
-            service_permissions = {}
-            for perm in unique_permissions:
-                if ':' in perm:
-                    service = perm.split(':')[0]
-                    if service not in service_permissions:
-                        service_permissions[service] = []
-                    service_permissions[service].append(perm)
-                else:
-                    if 'Other' not in service_permissions:
-                        service_permissions['Other'] = []
-                    service_permissions['Other'].append(perm)
-            
-            for service, perms in sorted(service_permissions.items()):
-                print(f"    {Fore.CYAN}       {service}: {len(perms)} actions{Style.RESET_ALL}")
-                for perm in sorted(perms)[:5]:  # Show first 5 permissions
-                    print(f"    {Fore.WHITE}         • {perm}{Style.RESET_ALL}")
+            unique = list(set(all_permissions))
+            print(f"    {Fore.MAGENTA}    📊 Permission Summary ({len(unique)} unique actions):{Style.RESET_ALL}")
+
+            service_map = {}
+            for perm in unique:
+                svc = perm.split(":")[0] if ":" in perm else "Other"
+                service_map.setdefault(svc, []).append(perm)
+
+            for svc, perms in sorted(service_map.items()):
+                print(f"    {Fore.CYAN}       {svc}: {len(perms)} actions{Style.RESET_ALL}")
+                for p in sorted(perms)[:5]:
+                    print(f"    {Fore.WHITE}         • {p}{Style.RESET_ALL}")
                 if len(perms) > 5:
                     print(f"    {Fore.YELLOW}         ... and {len(perms) - 5} more{Style.RESET_ALL}")
-        
-        return all_permissions
-        
+
+        # ─────────────────────────────────────────────────────
+        # Return rich dictionary
+        # ─────────────────────────────────────────────────────
+        return {
+            "managed_policies": managed_details,
+            "inline_policies":  inline_details,
+            "permissions":      list(set(all_permissions))
+        }
+
     except Exception as e:
         print(f"    {Fore.RED}❌ Error analyzing role permissions: {e}{Style.RESET_ALL}")
-        return []
+        return {}
+
 
 def is_service_linked_role(role):
     """Check if a role is an AWS service-linked role that should be filtered out"""
@@ -2904,6 +2957,12 @@ if username and not session_token:
             print(f" {Fore.GREEN}- {policy['PolicyName']} (ARN: {policy['PolicyArn']}){Style.RESET_ALL}")
             logger.info(f"Found attached policy: {policy['PolicyName']}")
             attached_policy_names.append(policy['PolicyName'])
+            attached_policy_details.append({
+                "name":  policy["PolicyName"],
+                "arn":   policy["PolicyArn"],
+                "default_version": version_id,
+                "document": policy_version["PolicyVersion"]["Document"]
+            })
             
             policy_detail = iam_client.get_policy(PolicyArn=policy["PolicyArn"])
             version_id = policy_detail["Policy"]["DefaultVersionId"]
@@ -2956,6 +3015,11 @@ if username and not session_token:
             print(f" {Fore.GREEN}- {policy_name}{Style.RESET_ALL}")
             logger.info(f"Found inline policy: {policy_name}")
             inline_policy_names.append(policy_name)
+            inline_policy_details.append({
+                "name": policy_name,
+                "document": policy_doc["PolicyDocument"]
+            })
+
             
             policy_doc = iam_client.get_user_policy(UserName=username, PolicyName=policy_name)
             print(f"   {Fore.BLUE}Permissions:{Style.RESET_ALL}")
@@ -2966,74 +3030,111 @@ if username and not session_token:
         user_groups = iam_client.list_groups_for_user(UserName=username)
         print(f"\n{Fore.MAGENTA}Groups:{Style.RESET_ALL}")
         group_names = []
+        # ---------------------------------------------------------
+        # GROUP MEMBERSHIPS
+        # ---------------------------------------------------------
         for group in user_groups.get("Groups", []):
-            group_name = group['GroupName']
+            group_name = group["GroupName"]
             print(f" {Fore.GREEN}- {group_name} (ARN: {group['Arn']}){Style.RESET_ALL}")
             logger.info(f"Found group membership: {group_name}")
             group_names.append(group_name)
 
-            # Managed policies attached to group
+            # Lists that will feed the JSON structure
+            group_policy_details        = []   # managed policies (full docs)
+            group_inline_policy_details = []   # inline policies (full docs)
+
+            # ──────────────────────────────────────────────────────
+            # 1) Managed policies attached to the group
+            # ──────────────────────────────────────────────────────
             attached_group_policies = iam_client.list_attached_group_policies(GroupName=group_name)
             for policy in attached_group_policies.get("AttachedPolicies", []):
-                print(f"   {Fore.CYAN}Attached Managed Policy: {policy['PolicyName']} (ARN: {policy['PolicyArn']}){Style.RESET_ALL}")
-                policy_detail = iam_client.get_policy(PolicyArn=policy["PolicyArn"])
-                version_id = policy_detail["Policy"]["DefaultVersionId"]
+                print(f"   {Fore.CYAN}Attached Managed Policy: {policy['PolicyName']} "
+                    f"(ARN: {policy['PolicyArn']}){Style.RESET_ALL}")
+
+                # ▸ Fetch default version & document
+                policy_detail  = iam_client.get_policy(PolicyArn=policy["PolicyArn"])
+                version_id     = policy_detail["Policy"]["DefaultVersionId"]
                 policy_version = iam_client.get_policy_version(
-                    PolicyArn=policy["PolicyArn"],
-                    VersionId=version_id
+                    PolicyArn=policy["PolicyArn"], VersionId=version_id
                 )
-                print(f"     {Fore.BLUE}Permissions for {policy['PolicyName']} (Default Version {version_id}):{Style.RESET_ALL}")
+
+                print(f"     {Fore.BLUE}Permissions for {policy['PolicyName']} "
+                    f"(Default Version {version_id}):{Style.RESET_ALL}")
                 print_policy_document(policy_version["PolicyVersion"]["Document"])
                 extract_permissions_from_policy(policy_version["PolicyVersion"]["Document"])
 
-                # Ask if user wants to list all versions for group policies too
-                list_versions = input(f"\n{Fore.CYAN}Do you want to list all versions of group policy '{policy['PolicyName']}'? (y/N): {Style.RESET_ALL}").strip().lower()
-                if list_versions in ['y', 'yes']:
+                # ▸ Stash the full document for JSON
+                group_policy_details.append({
+                    "name":            policy["PolicyName"],
+                    "arn":             policy["PolicyArn"],
+                    "default_version": version_id,
+                    "document":        policy_version["PolicyVersion"]["Document"],
+                })
+
+                # Optional: list **all** versions (unchanged code)
+                list_versions = input(
+                    f"\n{Fore.CYAN}Do you want to list all versions of group policy "
+                    f"'{policy['PolicyName']}'? (y/N): {Style.RESET_ALL}"
+                ).strip().lower()
+                if list_versions in ("y", "yes"):
                     try:
                         policy_versions = iam_client.list_policy_versions(PolicyArn=policy["PolicyArn"])
                         print(f"\n     {Fore.YELLOW}All versions of {policy['PolicyName']}:{Style.RESET_ALL}")
-                        
                         for version in policy_versions.get("Versions", []):
-                            version_id = version["VersionId"]
+                            v_id       = version["VersionId"]
                             is_default = version["IsDefaultVersion"]
-                            create_date = version["CreateDate"].strftime("%Y-%m-%d %H:%M:%S")
-                            status = "DEFAULT" if is_default else "NON-DEFAULT"
-                            
-                            print(f"       {Fore.CYAN}Version {version_id} ({status}) - Created: {create_date}{Style.RESET_ALL}")
-                            
-                            # Get the policy document for this version
-                            version_detail = iam_client.get_policy_version(
-                                PolicyArn=policy["PolicyArn"],
-                                VersionId=version_id
-                            )
-                            print(f"       {Fore.BLUE}Permissions:{Style.RESET_ALL}")
-                            # Indent the policy document output for group policies
+                            status     = "DEFAULT" if is_default else "NON-DEFAULT"
+                            created    = version["CreateDate"].strftime("%Y-%m-%d %H:%M:%S")
+                            print(f"       {Fore.CYAN}Version {v_id} ({status}) - Created: {created}{Style.RESET_ALL}")
+
+                            v_doc = iam_client.get_policy_version(
+                                PolicyArn=policy["PolicyArn"], VersionId=v_id
+                            )["PolicyVersion"]["Document"]
                             import json
-                            policy_doc = version_detail["PolicyVersion"]["Document"]
-                            formatted_doc = json.dumps(policy_doc, indent=4)
-                            indented_doc = '\n'.join(['         ' + line for line in formatted_doc.split('\n')])
-                            print(indented_doc)
-                            print()  # Add spacing between versions
-                            
+                            indented = json.dumps(v_doc, indent=4).splitlines()
+                            for line in indented:
+                                print("         " + line)
+                            print()
                     except Exception as e:
                         print(f"       {Fore.RED}Error listing versions for {policy['PolicyName']}: {e}{Style.RESET_ALL}")
                         logger.error(f"Error listing policy versions: {e}")
 
-            # Inline group policies
+            # ──────────────────────────────────────────────────────
+            # 2) Inline group policies
+            # ──────────────────────────────────────────────────────
             inline_group_policies = iam_client.list_group_policies(GroupName=group_name)
             for policy_name in inline_group_policies.get("PolicyNames", []):
                 print(f"   {Fore.CYAN}Inline Policy: {policy_name}{Style.RESET_ALL}")
-                policy_doc = iam_client.get_group_policy(GroupName=group_name, PolicyName=policy_name)
+                policy_doc = iam_client.get_group_policy(
+                    GroupName=group_name, PolicyName=policy_name
+                )
                 print(f"     {Fore.BLUE}Permissions:{Style.RESET_ALL}")
                 print_policy_document(policy_doc["PolicyDocument"])
                 extract_permissions_from_policy(policy_doc["PolicyDocument"])
 
+                # ▸ Save full doc
+                group_inline_policy_details.append({
+                    "name":     policy_name,
+                    "document": policy_doc["PolicyDocument"],
+                })
+
+            # ──────────────────────────────────────────────────────
+            # 3) Push one consolidated entry for this group
+            # ──────────────────────────────────────────────────────
+            group_entries.append({
+                "name":             group_name,
+                "arn":              group["Arn"],
+                "attached_policies": group_policy_details,
+                "inline_policies":   group_inline_policy_details,
+            })
+
+
         # Store summary for JSON output
         user_entry = {
-            "username": username,
-            "attached_policies": attached_policy_names,
-            "inline_policies": inline_policy_names,
-            "groups": group_names,
+            "username":          username,
+            "attached_policies": attached_policy_details,
+            "inline_policies":   inline_policy_details,
+            "groups":            group_entries
         }
         output_data["iam"]["users"].append(user_entry)
 
@@ -3296,11 +3397,17 @@ if not session_token:
                     print(f" {Fore.CYAN}  - Expiration: {credentials['Expiration']}{Style.RESET_ALL}")
                     
                     successful_roles.append({
-                        'role_name': role_name,
-                        'role_arn': role_arn,
-                        'credentials': credentials,
-                        'permissions': role_permissions
+                        "role_name":   role_name,
+                        "role_arn":    role_arn,
+                        "credentials": credentials,
+                        **role_details
                     })
+
+                    # persist every role’s details (whether we could assume it or not)
+                    output_data.setdefault("roles", {}).setdefault("details", {})[role_name] = {
+                        "arn": role_arn,
+                        **role_details
+                    }
                     
                     logger.success(f"Successfully assumed role: {role_name}")
                     
@@ -3325,6 +3432,16 @@ if not session_token:
                 print(f"{Fore.YELLOW}However, {len(matching_roles)} roles had matching trust policies:${Style.RESET_ALL}")
                 for role_name in matching_roles:
                     print(f" {Fore.YELLOW}• {role_name}{Style.RESET_ALL}")
+
+        # ─── Persist role-assumption results ────────────────────
+        output_data.setdefault("roles", {})
+        output_data["roles"]["all"] = [
+            {"role_name": role["RoleName"], "role_arn": role["Arn"]}
+            for role in all_roles
+        ]
+        output_data["roles"]["matching"]   = matching_roles          # trust-policy matches
+        output_data["roles"]["attempted"]  = attempted_roles          # brute-force attempts
+        output_data["roles"]["successful"] = successful_roles         # succeeded (with creds, perms)
 
         print(f"\n{Fore.BLUE}ℹ️  Note: AWS service-linked roles (AWSServiceRoleFor*, /aws-service-role/, etc.) were filtered out{Style.RESET_ALL}")
         print(f"{Fore.CYAN}   These roles are managed by AWS services and cannot be assumed by users.{Style.RESET_ALL}")

@@ -6,7 +6,7 @@ from pathlib import Path
 import logging
 import sys
 
-PORT = 8000
+PORT = 8001
 OUTPUT_FILE = Path('cloudtap_output.json')
 
 MAIN_PAGE_HTML = '''<!DOCTYPE html>
@@ -26,6 +26,11 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
       color: #2c3e50;
       margin-bottom: 30px;
       margin-left: 5%;
+    }
+    table td,
+    table pre {
+    word-break: break-all;   /* break within long words */
+    white-space: pre-wrap;   /* keep all characters, wrap as needed */
     }
     #content {
       display: flex;
@@ -129,8 +134,19 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
         const row = document.createElement('tr');
         keys.forEach(k => {
           const cell = document.createElement('td');
-          const val = obj[k];
-          cell.textContent = typeof val === 'object' ? JSON.stringify(val) : val;
+          const val  = obj[k];
+
+          if (typeof val === 'object' && val !== null) {
+            // pretty-print JSON objects
+            const pre = document.createElement('pre');
+            pre.style.margin = '0';
+            pre.textContent = JSON.stringify(val, null, 2); // 2-space indent
+            cell.appendChild(pre);
+          } else {
+            cell.textContent = val;
+          }
+
+          /* ← you need this line */
           row.appendChild(cell);
         });
         tbody.appendChild(row);
@@ -240,6 +256,371 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
       return wrap;
     }
 
+      function createBeanstalkAccordion(apps) {
+        if (!Array.isArray(apps) || !apps.length) {
+          return document.createTextNode('None');
+        }
+
+        const wrap = document.createElement('div');
+
+        apps.forEach(app => {
+          const det = document.createElement('details');
+          const sum = document.createElement('summary');
+          sum.textContent = `[${app.region}] ${app.application} — ${app.environments.length} envs`;
+          det.appendChild(sum);
+
+          // Top-level app info table
+          const info = document.createElement('table');
+          info.innerHTML = `
+            <tbody>
+              <tr><th>Region</th><td>${app.region}</td></tr>
+              <tr><th>Environments</th><td>${app.environments.join(', ')}</td></tr>
+            </tbody>`;
+          det.appendChild(info);
+
+          /* ---- Environment / env-var keys ---- */
+          if (app.environments.length) {
+            const envTbl = document.createElement('table');
+            const tb = document.createElement('tbody');
+
+            const head = document.createElement('tr');
+            head.innerHTML = '<th>Environment</th><th>Env-var keys found</th>';
+            envTbl.appendChild(head);
+
+            app.environments.forEach(envName => {
+              const tr = document.createElement('tr');
+              const keys = (app.env_var_keys?.[envName] || []).join(', ') || '—';
+              tr.innerHTML = `<td>${envName}</td><td>${keys}</td>`;
+              tb.appendChild(tr);
+            });
+
+            envTbl.appendChild(tb);
+            det.appendChild(envTbl);
+          }
+
+          wrap.appendChild(det);
+        });
+
+        return wrap;
+      }
+
+      function createSnsAccordion(topics, subs) {
+        if (!Array.isArray(topics) || !topics.length) {
+          return document.createTextNode('None');
+        }
+        const wrap = document.createElement('div');
+
+        topics.forEach(t => {
+          const det  = document.createElement('details');
+          const sum  = document.createElement('summary');
+          sum.textContent =
+            `[${t.region}] ${t.name} — ${t.subscription_count} subscription`
+            + (t.subscription_count === 1 ? '' : 's');
+          det.appendChild(sum);
+
+          /* topic info */
+          const info = document.createElement('table');
+          info.innerHTML = `
+            <tbody>
+              <tr><th>Region</th><td>${t.region}</td></tr>
+              <tr><th>ARN</th><td style="word-break:break-all">${t.arn}</td></tr>
+              <tr><th>Subscriptions</th><td>${t.subscription_count}</td></tr>
+            </tbody>`;
+          det.appendChild(info);
+
+          /* matching subscriptions */
+          const relSubs = (subs || []).filter(s => s.topic_arn === t.arn);
+          if (relSubs.length) {
+            const subTbl = createTableFromObjects(relSubs);
+            det.appendChild(subTbl);
+          }
+
+          wrap.appendChild(det);
+        });
+
+        return wrap;
+      }
+
+      function createS3Accordion(buckets) {
+        if (!Array.isArray(buckets) || !buckets.length) {
+          return document.createTextNode('None');
+        }
+        const wrap = document.createElement('div');
+
+        buckets.forEach(b => {
+          const det = document.createElement('details');
+          const sum = document.createElement('summary');
+          sum.textContent =
+            `[${b.region}] ${b.name} — ${b.objects.length} object`
+            + (b.objects.length === 1 ? '' : 's');
+          det.appendChild(sum);
+
+          /* bucket info table */
+          const info = document.createElement('table');
+          info.innerHTML = `
+            <tbody>
+              <tr><th>Region</th><td>${b.region}</td></tr>
+              <tr><th>Objects</th><td>${b.objects.length}</td></tr>
+            </tbody>`;
+          det.appendChild(info);
+
+          /* list of keys (in two columns if long) */
+          if (b.objects.length) {
+            const ul = document.createElement('ul');
+            ul.style.columns = '2 300px';      /* two columns, min 300 px each */
+            ul.style.paddingLeft = '20px';
+
+            b.objects.forEach(k => {
+              const li = document.createElement('li');
+              li.textContent = k;
+              ul.appendChild(li);
+            });
+            det.appendChild(ul);
+          }
+
+          wrap.appendChild(det);
+        });
+
+        return wrap;
+      }
+    function makeEc2RegionTable(regionObj) {
+      if (!regionObj || Object.keys(regionObj).length === 0) {
+        return document.createTextNode('None');
+      }
+      /* flatten { "us-east-1": {…}, "eu-west-1": {…} } -> [{region:"us-east-1", …}, …] */
+      const rows = Object.entries(regionObj).map(([region, stats]) => ({
+        region,
+        ...stats
+      }));
+      return createTableFromObjects(rows);
+      }
+
+        function createEc2Accordion(instances) {
+      if (!Array.isArray(instances) || !instances.length) {
+        return document.createTextNode('None');
+      }
+
+      const wrap = document.createElement('div');
+
+      /* sort by region then instance-id for a stable order */
+      instances
+        .slice()
+        .sort((a, b) => a.region.localeCompare(b.region) ||
+                        a.id.localeCompare(b.id))
+        .forEach(inst => {
+          const det = document.createElement('details');
+          const sum = document.createElement('summary');
+
+          const badge = inst.state === 'running'
+            ? '🟢'
+            : inst.state === 'stopped'
+              ? '⏹️'
+              : '⚪';
+
+          sum.textContent = `[${inst.region}] ${inst.id} — ${inst.type} ${badge}`;
+          det.appendChild(sum);
+
+          /* — basic facts table — */
+          const tbl = document.createElement('table');
+          tbl.innerHTML = `
+            <tbody>
+              <tr><th>State</th><td>${inst.state}</td></tr>
+              <tr><th>AMI</th><td>${inst.ami}</td></tr>
+              <tr><th>Public IP</th><td>${inst.public_ip || '—'}</td></tr>
+              <tr><th>Private IP</th><td>${inst.private_ip || '—'}</td></tr>
+              <tr><th>Key pair</th><td>${inst.key_pair || '—'}</td></tr>
+              <tr><th>IAM profile</th><td style="word-break:break-all">
+                ${inst.iam_profile || '—'}
+              </td></tr>
+            </tbody>`;
+          det.appendChild(tbl);
+
+          /* — security groups — */
+          if (inst.security_groups?.length) {
+            const sgUl = createList(inst.security_groups);
+            det.appendChild(renderSection('Security Groups', sgUl));
+          }
+
+          /* — attached volumes — */
+          if (inst.volumes?.length) {
+            const volUl = createList(inst.volumes);
+            det.appendChild(renderSection('EBS Volumes', volUl));
+          }
+
+          wrap.appendChild(det);
+        });
+
+      return wrap;
+    }
+    /* ------------- IAM user accordion ------------- */
+    function createIamAccordion(users) {
+      if (!Array.isArray(users) || !users.length) {
+        return document.createTextNode('None');
+      }
+
+      const wrap = document.createElement('div');
+
+      users.forEach(u => {
+        const det = document.createElement('details');
+        const sum = document.createElement('summary');
+
+        const ap = u.attached_policies?.length || 0,
+              ip = u.inline_policies?.length   || 0,
+              gp = u.groups?.length            || 0;
+
+        sum.textContent = `${u.username} — ${ap} AP / ${ip} IP / ${gp} groups`;
+        det.appendChild(sum);
+
+        /* basic counts table */
+        const info = document.createElement('table');
+        info.innerHTML = `
+          <tbody>
+            <tr><th>Attached policies</th><td>${ap}</td></tr>
+            <tr><th>Inline policies</th><td>${ip}</td></tr>
+            <tr><th>Groups</th><td>${gp}</td></tr>
+          </tbody>`;
+        det.appendChild(info);
+
+        /* attached managed policies */
+        if (ap) {
+          const apTbl = createTableFromObjects(u.attached_policies);
+          det.appendChild(renderSection('Attached Policies', apTbl));
+        }
+
+        /* inline user policies */
+        if (ip) {
+          const ipTbl = createTableFromObjects(u.inline_policies);
+          det.appendChild(renderSection('Inline Policies', ipTbl));
+        }
+
+        /* groups with their policies */
+        if (gp) {
+          u.groups.forEach(g => {
+            const gDet  = document.createElement('details');
+            const gSum  = document.createElement('summary');
+            gSum.textContent =
+              `Group: ${g.name} — ${g.attached_policies.length} AP / ${g.inline_policies.length} IP`;
+            gDet.appendChild(gSum);
+
+            const gTbl = document.createElement('table');
+            gTbl.innerHTML = `
+              <tbody>
+                <tr><th>ARN</th><td style="word-break:break-all">${g.arn}</td></tr>
+              </tbody>`;
+            gDet.appendChild(gTbl);
+
+            if (g.attached_policies.length) {
+              gDet.appendChild(
+                renderSection('Group Attached Policies',
+                              createTableFromObjects(g.attached_policies))
+              );
+            }
+            if (g.inline_policies.length) {
+              gDet.appendChild(
+                renderSection('Group Inline Policies',
+                              createTableFromObjects(g.inline_policies))
+              );
+            }
+
+            det.appendChild(gDet);
+          });
+        }
+
+        wrap.appendChild(det);
+      });
+
+      return wrap;
+    }
+
+    /* ------------- ROLES accordion ------------- */
+    function createRolesAccordion(rolesObj) {
+      if (!rolesObj || Object.keys(rolesObj).length === 0) {
+        return document.createTextNode('None');
+      }
+
+      const wrap = document.createElement('div');
+
+      /* --- 1. “All roles” table --- */
+      if (Array.isArray(rolesObj.all) && rolesObj.all.length) {
+        wrap.appendChild(
+          renderSection('All Enumerated Roles',
+                        createTableFromObjects(rolesObj.all))
+        );
+      }
+
+      /* --- 2. Matching roles (trust-policy hits) --- */
+      if (rolesObj.matching?.length) {
+        wrap.appendChild(
+          renderSection('Trust-Policy Matches',
+                        createList(rolesObj.matching))
+        );
+      }
+
+      /* --- 3. Attempted assumptions --- */
+      if (rolesObj.attempted?.length) {
+        wrap.appendChild(
+          renderSection('AssumeRole Attempts',
+                        createList(rolesObj.attempted))
+        );
+      }
+
+      /* --- 4. Successful assumptions (rich detail) --- */
+      if (rolesObj.successful?.length) {
+        const detWrap = document.createElement('div');
+
+        rolesObj.successful.forEach(s => {
+          const det = document.createElement('details');
+          const sum = document.createElement('summary');
+          sum.textContent = `${s.role_name} — SUCCESS`;
+          det.appendChild(sum);
+
+          /* basic info table */
+          const info = document.createElement('table');
+          info.innerHTML = `
+            <tbody>
+              <tr><th>Role ARN</th><td style="word-break:break-all">${s.role_arn}</td></tr>
+              <tr><th>Expiration</th><td>${s.credentials?.Expiration || '—'}</td></tr>
+            </tbody>`;
+          det.appendChild(info);
+
+          /* credentials */
+          if (s.credentials) {
+            const credTbl = createTableFromObjects([s.credentials]);
+            det.appendChild(renderSection('Temp Credentials', credTbl));
+          }
+
+          /* managed policies */
+          if (Array.isArray(s.managed_policies) && s.managed_policies.length) {
+            det.appendChild(
+              renderSection('Managed Policies',
+                            createTableFromObjects(s.managed_policies))
+            );
+          }
+
+          /* inline policies */
+          if (Array.isArray(s.inline_policies) && s.inline_policies.length) {
+            det.appendChild(
+              renderSection('Inline Policies',
+                            createTableFromObjects(s.inline_policies))
+            );
+          }
+
+          /* permissions list */
+          if (s.permissions?.length) {
+            det.appendChild(
+              renderSection('Allowed Actions',
+                            createList(s.permissions))
+            );
+          }
+
+          detWrap.appendChild(det);
+        });
+
+        wrap.appendChild(renderSection('Successfully Assumed Roles', detWrap));
+      }
+
+      return wrap;
+    }
     fetch('/data')
       .then(resp => resp.json())
       .then(data => {
@@ -254,12 +635,35 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
         if (permsSection) content.appendChild(permsSection);
 
         // IAM (users/groups/roles/policies)
-        const iamSec = renderDetailsSection('IAM', data.iam || {});
-        if (iamSec) content.appendChild(iamSec);
+        if (data.iam?.users?.length) {
+          content.appendChild(
+            renderSection('IAM → Users',
+                          createIamAccordion(data.iam.users))
+          );
+        }
+        // ROLES
+        if (data.roles && Object.keys(data.roles).length) {
+          content.appendChild(
+            renderSection('Roles (Discovery & Assumption)',
+                          createRolesAccordion(data.roles))
+          );
+        }
 
-        // EC2 Regions
-        const ec2Sec = renderDetailsSection('EC2', data.ec2?.regions || {});
-        if (ec2Sec) content.appendChild(ec2Sec);
+
+        // EC2 Region Summary
+        if (data.ec2?.regions && Object.keys(data.ec2.regions).length) {
+          content.appendChild(
+            renderSection('EC2 Regions',
+                          makeEc2RegionTable(data.ec2.regions))
+          );
+        }
+
+        if (data.ec2?.instances?.length) {
+          content.appendChild(
+            renderSection('EC2 Instances',
+                          createEc2Accordion(data.ec2.instances))
+          );
+        }
 
         // Lambda
         if (data.lambda?.functions?.length) {
@@ -270,10 +674,19 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
         }
 
         // Beanstalk
-        const bsSec = renderListSection('Beanstalk Applications', data.beanstalk?.applications);
-        const bsEnv = renderListSection('Beanstalk Environments', data.beanstalk?.environments);
-        if (bsSec) content.appendChild(bsSec);
-        if (bsEnv) content.appendChild(bsEnv);
+        if (data.beanstalk?.applications?.length) {
+          content.appendChild(
+            renderSection('Beanstalk Applications',
+                          createBeanstalkAccordion(data.beanstalk.applications))
+          );
+        }
+
+        if (data.beanstalk?.environments?.length) {
+          content.appendChild(
+            renderSection('Beanstalk Environments (flat list)',
+                          createList(data.beanstalk.environments))
+          );
+        }
 
         // Secrets Manager
         if (data.secrets_manager?.secrets?.length) {
@@ -284,18 +697,32 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
         }
 
         // S3
-        const s3Sec = renderListSection('S3 Buckets', data.s3?.buckets);
-        if (s3Sec) content.appendChild(s3Sec);
+        if (data.s3?.buckets?.length) {
+          content.appendChild(
+            renderSection(
+              'S3 Buckets',
+              createS3Accordion(data.s3.buckets)
+            )
+          );
+        }
 
         // SNS
-        const snsTop = renderListSection('SNS Topics', data.sns?.topics);
-        const snsSub = renderListSection('SNS Subscriptions', data.sns?.subscriptions);
-        if (snsTop) content.appendChild(snsTop);
-        if (snsSub) content.appendChild(snsSub);
+        if (data.sns?.topics?.length) {
+          content.appendChild(
+            renderSection(
+              'SNS Topics',
+              createSnsAccordion(data.sns.topics, data.sns.subscriptions || [])
+            )
+          );
+        }
 
         // ECS
-        const ecsSec = renderListSection('ECS Clusters', data.ecs?.clusters);
-        if (ecsSec) content.appendChild(ecsSec);
+        if (data.ecs?.clusters?.length) {
+          content.appendChild(
+            renderSection('ECS Clusters',
+                          createTableFromObjects(data.ecs.clusters))
+          );
+        }
 
         //Priv Esc
         if (data.privilege_escalation?.paths?.length) {

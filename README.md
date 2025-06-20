@@ -98,3 +98,53 @@ python3 CloudTap.py
 - `tqdm`
 - `loguru`
 - AWS Access Key ID and Secret Access Key with appropriate IAM permissions
+
+---
+
+## Proposed Output JSON Format
+
+CloudTap can output a consolidated JSON document so the collected data can be consumed by other tools or a web interface. Each section is optional depending on the modules executed.
+
+```json
+{
+  "metadata": {
+    "timestamp": "2025-01-01T00:00:00Z",
+    "profile": "default",
+    "regions_scanned": ["us-east-1"],
+    "tool_version": "1.0.0"
+  },
+  "identity": {
+    "UserId": "...",
+    "Account": "...",
+    "Arn": "...",
+    "credentialType": "temporary"
+  },
+  "permissions": {
+    "enumerated": ["s3:ListBuckets"],
+    "bruteforced": ["ec2:DescribeInstances"]
+  },
+  "iam": {
+    "users": [],
+    "roles": [],
+    "policies": []
+  },
+  "ec2": {
+    "regions": {
+      "us-east-1": {
+        "instances": [],
+        "volumes": []
+      }
+    }
+  },
+  "s3": {"buckets": []},
+  "secrets_manager": {"secrets": []},
+  "sns": {"topics": [], "subscriptions": []},
+  "beanstalk": {"applications": [], "environments": []},
+  "lambda": {"functions": []},
+  "ecs": {"clusters": []},
+  "privilege_escalation": {"paths": []}
+}
+```
+
+A more complete skeleton is available in [`docs/output_schema.json`](docs/output_schema.json).
+

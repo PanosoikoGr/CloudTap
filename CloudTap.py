@@ -341,6 +341,7 @@ def analyze_lambda_functions(session, current_region):
     
     total_functions_found = 0
     total_downloaded = 0
+    collected_entries = []
     
     # Process each region
     for region in regions_to_scan:
@@ -349,9 +350,10 @@ def analyze_lambda_functions(session, current_region):
         
         try:
             lambda_client = session.client("lambda", region_name=region)
-            region_functions, region_downloaded = analyze_lambda_functions_in_region(lambda_client, lambda_dir, region)
+            region_functions, region_downloaded, region_entries = analyze_lambda_functions_in_region(lambda_client, lambda_dir, region)
             total_functions_found += region_functions
             total_downloaded += region_downloaded
+            collected_entries.extend(region_entries)
             
         except Exception as e:
             error_msg = f"Error scanning region {region}: {e}"
@@ -364,13 +366,19 @@ def analyze_lambda_functions(session, current_region):
     print(f"  {Fore.CYAN}Total functions found: {total_functions_found}{Style.RESET_ALL}")
     print(f"  {Fore.GREEN}Total functions downloaded: {total_downloaded}{Style.RESET_ALL}")
     print(f"  {Fore.MAGENTA}Downloads saved to: ./lambda_downloads/{Style.RESET_ALL}")
-    
+
     logger.info(f"Lambda analysis complete across {len(regions_to_scan)} regions: {total_functions_found} functions, {total_downloaded} downloaded")
+
+    for entry in collected_entries:
+        if entry["region"] not in output_data["metadata"]["regions_scanned"]:
+            output_data["metadata"]["regions_scanned"].append(entry["region"])
+    output_data["lambda"]["functions"].extend(collected_entries)
 
 def analyze_lambda_functions_in_region(lambda_client, lambda_dir, region):
     """Analyze Lambda functions in a specific region"""
     region_functions_count = 0
     region_downloaded_count = 0
+    region_entries = []
     
     try:
         # List all Lambda functions in this region
@@ -398,6 +406,8 @@ def analyze_lambda_functions_in_region(lambda_client, lambda_dir, region):
             for func in functions:
                 function_name = func['FunctionName']
                 pbar.set_description(f"Analyzing {function_name[:30]}...")
+
+                env_vars = {}
                 
                 print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
                 print(f"{Fore.CYAN}Function: {function_name}{Style.RESET_ALL}")
@@ -504,6 +514,18 @@ def analyze_lambda_functions_in_region(lambda_client, lambda_dir, region):
                 print(f"\n{Fore.YELLOW}📥 Attempting to download function code...{Style.RESET_ALL}")
                 if download_lambda_code(lambda_client, function_name, lambda_dir / region):
                     downloaded_count += 1
+
+                entry = {
+                    "region": region,
+                    "name": func["FunctionName"],
+                    "runtime": func.get("Runtime"),
+                    "handler": func.get("Handler"),
+                    "arn": func.get("FunctionArn"),
+                    "role": func.get("Role"),
+                }
+                if env_vars:
+                    entry["env_var_keys"] = list(env_vars.keys())
+                region_entries.append(entry)
                 
                 pbar.update(1)
         
@@ -516,13 +538,13 @@ def analyze_lambda_functions_in_region(lambda_client, lambda_dir, region):
         
         logger.info(f"Region {region} analysis complete: {len(functions)} functions, {downloaded_count} downloaded")
         
-        return region_functions_count, region_downloaded_count
+        return region_functions_count, region_downloaded_count, region_entries
         
     except Exception as e:
         error_msg = f"Error during Lambda analysis in {region}: {e}"
         logger.error(error_msg)
         print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-        return 0, 0
+        return 0, 0, []
 def analyze_ecs_cluster(ecs_client, cluster_name, region):
     """Analyze a specific ECS cluster and its resources"""
     try:
@@ -884,6 +906,7 @@ def analyze_ecs_clusters(session, current_region):
     total_clusters_found = 0
     total_services_found = 0
     total_tasks_found = 0
+    cluster_entries = []
     
     # Process each region
     for region in regions_to_scan:
@@ -912,11 +935,22 @@ def analyze_ecs_clusters(session, current_region):
                 # Count services and tasks for summary
                 try:
                     services_response = ecs_client.list_services(cluster=cluster_name)
-                    total_services_found += len(services_response.get('serviceArns', []))
-                    
+                    service_count = len(services_response.get('serviceArns', []))
+                    total_services_found += service_count
+
                     running_tasks = ecs_client.list_tasks(cluster=cluster_name, desiredStatus='RUNNING')
                     stopped_tasks = ecs_client.list_tasks(cluster=cluster_name, desiredStatus='STOPPED')
-                    total_tasks_found += len(running_tasks.get('taskArns', [])) + len(stopped_tasks.get('taskArns', []))
+                    task_count = len(running_tasks.get('taskArns', [])) + len(stopped_tasks.get('taskArns', []))
+                    total_tasks_found += task_count
+
+                    cluster_entries.append({
+                        "region": region,
+                        "name": cluster_name,
+                        "services": service_count,
+                        "tasks": task_count,
+                    })
+                    if region not in output_data["metadata"]["regions_scanned"]:
+                        output_data["metadata"]["regions_scanned"].append(region)
                 except Exception as e:
                     logger.error(f"Error counting resources in cluster {cluster_name}: {e}")
             
@@ -933,6 +967,8 @@ def analyze_ecs_clusters(session, current_region):
     print(f"  {Fore.CYAN}Total tasks found: {total_tasks_found}{Style.RESET_ALL}")
     
     logger.info(f"ECS analysis complete across {len(regions_to_scan)} regions: {total_clusters_found} clusters, {total_services_found} services, {total_tasks_found} tasks")
+
+    output_data["ecs"]["clusters"].extend(cluster_entries)
 
 def analyze_ec2_instances(session, current_region):
     """Comprehensive EC2 instance analysis for penetration testing"""
@@ -1564,10 +1600,15 @@ def analyze_beanstalk_environments(session, current_region):
         
         try:
             beanstalk_client = session.client("elasticbeanstalk", region_name=region)
-            region_apps, region_envs, region_vars = analyze_beanstalk_in_region(beanstalk_client, region)
+            region_apps, region_envs, region_vars, region_entries = analyze_beanstalk_in_region(beanstalk_client, region)
             total_applications += region_apps
             total_environments += region_envs
             total_env_vars += region_vars
+            output_data["beanstalk"]["applications"].extend(region_entries)
+            for entry in region_entries:
+                output_data["beanstalk"]["environments"].extend(entry.get("environments", []))
+            if region not in output_data["metadata"]["regions_scanned"]:
+                output_data["metadata"]["regions_scanned"].append(region)
             
         except Exception as e:
             error_msg = f"Error scanning Beanstalk in region {region}: {e}"
@@ -1601,6 +1642,7 @@ def analyze_beanstalk_in_region(beanstalk_client, region):
         
         total_environments = 0
         total_env_vars = 0
+        app_entries = []
         
         # Process each application
         for app in apps:
@@ -1643,10 +1685,14 @@ def analyze_beanstalk_in_region(beanstalk_client, region):
                 print(f"\n{Fore.BLUE}🌍 Environments ({len(envs)} total):{Style.RESET_ALL}")
                 total_environments += len(envs)
                 
+                env_names = []
+                env_var_map = {}
+
                 # Process each environment
                 for env in envs:
                     env_name = env['EnvironmentName']
                     env_id = env['EnvironmentId']
+                    env_names.append(env_name)
                     
                     print(f"\n  {Fore.CYAN}--- Environment: {env_name} ---{Style.RESET_ALL}")
                     print(f"  {Fore.GREEN}Environment ID: {env_id}{Style.RESET_ALL}")
@@ -1698,6 +1744,7 @@ def analyze_beanstalk_in_region(beanstalk_client, region):
                                 for var_name, var_value in env_vars:
                                     print(f"    {Fore.RED}{var_name}: {var_value}{Style.RESET_ALL}")
                                 logger.warning(f"Found {len(env_vars)} environment variables in {env_name}")
+                                env_var_map[env_name] = [name for name, _ in env_vars]
                             else:
                                 print(f"\n  {Fore.BLUE}Environment Variables: None{Style.RESET_ALL}")
                             
@@ -1764,6 +1811,13 @@ def analyze_beanstalk_in_region(beanstalk_client, region):
                 error_msg = f"Error getting environments for application {app_name}: {e}"
                 logger.error(error_msg)
                 print(f"  {Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+
+            app_entries.append({
+                "region": region,
+                "application": app_name,
+                "environments": env_names,
+                "env_var_keys": env_var_map,
+            })
         
         # Region summary
         print(f"\n{Fore.GREEN}📊 {region} Beanstalk Summary:{Style.RESET_ALL}")
@@ -1773,18 +1827,19 @@ def analyze_beanstalk_in_region(beanstalk_client, region):
         
         logger.info(f"Region {region} Beanstalk analysis complete: {len(apps)} apps, {total_environments} environments, {total_env_vars} env vars")
         
-        return len(apps), total_environments, total_env_vars
+        return len(apps), total_environments, total_env_vars, app_entries
         
     except Exception as e:
         error_msg = f"Error during Beanstalk analysis in {region}: {e}"
         logger.error(error_msg)
         print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-        return 0, 0, 0
+        return 0, 0, 0, []
 
 def analyze_sns_topics_in_region(sns_client, region):
     """Analyze SNS topics in a specific region"""
     topics_found = 0
     subscribed_count = 0
+    topic_entries = []
     
     try:
         print(f"\n{Fore.BLUE}📡 Analyzing SNS topics in {region}...{Style.RESET_ALL}")
@@ -1888,6 +1943,13 @@ def analyze_sns_topics_in_region(sns_client, region):
                         logger.error(error_msg)
                 else:
                     print(f"    {Fore.RED}❌ Invalid email address{Style.RESET_ALL}")
+
+            topic_entries.append({
+                "region": region,
+                "name": topic_name,
+                "arn": topic_arn,
+                "subscription_count": len(subscriptions),
+            })
             
             print()  # Add spacing between topics
             
@@ -1895,9 +1957,9 @@ def analyze_sns_topics_in_region(sns_client, region):
         error_msg = f"Error analyzing SNS topics in region {region}: {e}"
         logger.error(error_msg)
         print(f"  {Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-        return 0, 0
-    
-    return topics_found, subscribed_count
+        return 0, 0, []
+
+    return topics_found, subscribed_count, topic_entries
 
 
 def analyze_sns_topics(session, current_region):
@@ -1941,7 +2003,10 @@ def analyze_sns_topics(session, current_region):
         
         try:
             sns_client = session.client("sns", region_name=region)
-            region_topics, region_subscribed = analyze_sns_topics_in_region(sns_client, region)
+            region_topics, region_subscribed, topic_entries = analyze_sns_topics_in_region(sns_client, region)
+            output_data["sns"]["topics"].extend(topic_entries)
+            if region not in output_data["metadata"]["regions_scanned"]:
+                output_data["metadata"]["regions_scanned"].append(region)
             
             if region_topics > 0:
                 regions_with_topics += 1
@@ -2024,6 +2089,15 @@ def list_all_sns_subscriptions(session, current_region):
                     print(f"        Endpoint: {masked_endpoint}")
                     print(f"        Status: {sub.get('SubscriptionArn', 'Pending')}")
                     print()
+
+                    output_data["sns"]["subscriptions"].append({
+                        "region": region,
+                        "topic_arn": topic_arn,
+                        "protocol": protocol,
+                        "endpoint": masked_endpoint,
+                    })
+                    if region not in output_data["metadata"]["regions_scanned"]:
+                        output_data["metadata"]["regions_scanned"].append(region)
                 
                 total_subscriptions += len(subscriptions)
             else:

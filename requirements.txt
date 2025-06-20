@@ -4,15 +4,8 @@
 # Core AWS SDK
 boto3>=1.34.0
 
-# JSON handling (built-in, but listing for completeness)
-# json - built-in module
-
-# File system operations (built-in, but listing for completeness)  
-# os - built-in module
-# pathlib - built-in module (Python 3.4+)
-
-# Date/time handling (built-in, but listing for completeness)
-# datetime - built-in module
+# HTTP requests
+requests>=2.31.0
 
 # Optional: Enhanced output formatting
 colorama>=0.4.6

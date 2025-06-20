@@ -14,6 +14,8 @@ import argparse
 from botocore.exceptions import ProfileNotFound,ClientError,EndpointConnectionError
 from tqdm import tqdm
 from botocore.config import Config
+import shutil
+import subprocess
 
 permissions = []  # Permissions discovered from IAM enumeration
 bruteforced_permissions = []  # Permissions discovered via bruteforce
@@ -3361,13 +3363,50 @@ print(f"{Fore.CYAN}📁 S3 downloads saved to: ./s3_downloads/{Style.RESET_ALL}"
 print(f"{Fore.MAGENTA}📋 Detailed log saved to: aws_security_assessment.log{Style.RESET_ALL}")
 print(f"{Fore.YELLOW}🔍 Check the output above for IAM permissions, secrets, and role analysis{Style.RESET_ALL}")
 
-# Write results to JSON file
+# If an old output exists, archive it
+if os.path.isfile("cloudtap_output.json"):
+    try:
+        with open("cloudtap_output.json", 'r') as f:
+            existing = json.load(f)
+        metadata = existing.get('metadata', {})
+        profile = metadata.get('profile', 'unknown')
+        timestamp = metadata.get('timestamp', '')
+
+        # Sanitize timestamp for filename
+        safe_ts = timestamp.replace(':', '-').replace('T', '_').replace('Z', '')
+        new_name = f"{profile}_{safe_ts}.json"
+
+        os.makedirs("old-scans", exist_ok=True)
+        dest_path = os.path.join("old-scans", new_name)
+        shutil.move("cloudtap_output.json", dest_path)
+
+        print(f"{Fore.YELLOW}🗄 Archived existing output as {dest_path}{Style.RESET_ALL}")
+        logger.info(f"Archived old output to {dest_path}")
+    except Exception as e:
+        logger.error(f"Failed to archive existing output: {e}")
+
+# Save new output
 try:
-    with open("cloudtap_output.json", "w") as f:
-        json.dump(output_data, f, indent=2, default=custom_serializer)
+    with open("cloudtap_output.json", 'w') as f:
+        json.dump(output_data, f, indent=2)
     print(f"{Fore.GREEN}📄 Results written to cloudtap_output.json{Style.RESET_ALL}")
-    logger.success("Results saved to cloudtap_output.json")
+    logger.info("Results saved to cloudtap_output.json")
 except Exception as e:
     logger.error(f"Failed to write output JSON: {e}")
 
-logger.success("AWS Security Assessment completed successfully")
+# Final success log
+logger.info("AWS Security Assessment completed successfully")
+
+# Prompt to launch the web viewer
+response = input("\nWould you like to launch the web viewer now? [y/N]: ")
+if response.strip().lower() in ('y', 'yes'):
+    try:
+        subprocess.run(['python', 'web_viewer.py'], check=True)
+        logger.info("web_viewer.py executed successfully")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Error running web_viewer.py: {e}")
+    except KeyboardInterrupt:
+        print("\nViewer closed by user")
+else:
+    logger.info("Skipping web viewer launch")
+

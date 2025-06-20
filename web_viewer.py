@@ -13,17 +13,96 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
   <meta charset="utf-8">
   <title>CloudTap Results</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    section { margin-bottom: 2em; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ccc; padding: 4px 8px; }
-    th { background: #f0f0f0; text-align: left; }
-    details { border: 1px solid #ccc; padding: .5em; margin-bottom: 1em; }
-    summary { font-weight: bold; cursor: pointer; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #eaf0f6;
+      color: #333;
+    }
+    h1 {
+      color: #2c3e50;
+      margin-bottom: 30px;
+      margin-left: 5%;
+    }
+    #content {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      width: 100%;
+    }
+    section {
+      background: #fff;
+      border-radius: 10px;
+      padding: 20px;
+      margin: 20px 5% 20px auto;
+      width: 90%;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+    }
+    h2 {
+      color: #2980b9;
+      margin-top: 0;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 10px;
+      word-break: break-word;
+    }
+    th, td {
+      border: 1px solid #dcdfe3;
+      padding: 10px 14px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background-color: #f5f8fa;
+      font-weight: bold;
+    }
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+    tr:hover {
+      background-color: #eef2f7;
+    }
+    .permissions-wrapper {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      margin-bottom: 20px;
+    }
+    .permission-section {
+      flex: 0 0 45%;
+    }
+    .permission-list {
+      columns: 2;
+      column-gap: 20px;
+      list-style: disc inside;
+      padding: 0;
+      margin: 0;
+    }
+    .permission-list li {
+      break-inside: avoid;
+      padding: 4px 0;
+    }
+    details {
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: .75em 1em;
+      margin: 20px 5% 20px auto;
+      width: 90%;
+      background-color: #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    }
+    summary {
+      font-weight: bold;
+      cursor: pointer;
+      color: #2c3e50;
+    }
   </style>
 </head>
 <body>
-  <h1>CloudTap Results</h1>
+  <h1>☁️ CloudTap Results</h1>
   <div id="content">Loading...</div>
   <script>
     function createTableFromObjects(list) {
@@ -60,9 +139,12 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
 
     function createList(list) {
       const ul = document.createElement('ul');
+      ul.className = 'permission-list';
       list.forEach(item => {
         const li = document.createElement('li');
-        li.textContent = typeof item === 'object' ? JSON.stringify(item) : item;
+        li.textContent = typeof item === 'object'
+          ? JSON.stringify(item)
+          : item;
         ul.appendChild(li);
       });
       return ul;
@@ -82,74 +164,43 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
     }
 
     function renderPermissions(perms) {
+      // if both empty, skip
+      if ((!perms.enumerated || !perms.enumerated.length) &&
+          (!perms.bruteforced || !perms.bruteforced.length)) {
+        return null;
+      }
+      const wrapper = document.createElement('div');
+      wrapper.className = 'permissions-wrapper';
+
+      const enumSec = document.createElement('div');
+      enumSec.className = 'permission-section';
+      enumSec.appendChild(renderSection('Enumerated Permissions',
+                                        createList(perms.enumerated || [])));
+
+      const brutSec = document.createElement('div');
+      brutSec.className = 'permission-section';
+      brutSec.appendChild(renderSection('Bruteforced Permissions',
+                                        createList(perms.bruteforced || [])));
+
+      wrapper.appendChild(enumSec);
+      wrapper.appendChild(brutSec);
+      return renderSection('Permissions', wrapper);
+    }
+
+    function renderListSection(title, list) {
+      if (!Array.isArray(list) || !list.length) return null;
+      return renderSection(title, createList(list));
+    }
+
+    function renderDetailsSection(title, obj) {
+      if (!obj || Object.keys(obj).length === 0) return null;
       const div = document.createElement('div');
-      div.appendChild(renderSection('Enumerated Permissions', createList(perms.enumerated)));
-      div.appendChild(renderSection('Bruteforced Permissions', createList(perms.bruteforced)));
-      return div;
-    }
-
-    function renderIam(iam) {
-      const div = document.createElement('div');
-      if (iam.users) div.appendChild(renderSection('Users', createList(iam.users)));
-      if (iam.groups) div.appendChild(renderSection('Groups', createList(iam.groups)));
-      if (iam.roles) div.appendChild(renderSection('Roles', createList(iam.roles)));
-      if (iam.policies) div.appendChild(renderSection('Policies', createList(iam.policies)));
-      return div;
-    }
-
-    function renderLambda(lam) {
-      return renderSection('Lambda Functions', createTableFromObjects(lam.functions));
-    }
-
-    function renderBeanstalk(bs) {
-      const div = document.createElement('div');
-      div.appendChild(renderSection('Applications', createList(bs.applications)));
-      div.appendChild(renderSection('Environments', createList(bs.environments)));
-      return div;
-    }
-
-    function renderEC2(ec2) {
-      const container = document.createElement('div');
-      Object.entries(ec2.regions || {}).forEach(([region, info]) => {
-        const regionDiv = document.createElement('div');
-        const details = document.createElement('details');
-        const summary = document.createElement('summary');
-        summary.textContent = `Region: ${region}`;
-        details.appendChild(summary);
-        if (info.instances) details.appendChild(renderSection('Instances', createList(info.instances)));
-        if (info.volumes) details.appendChild(renderSection('Volumes', createList(info.volumes)));
-        if (info.security_groups) details.appendChild(renderSection('Security Groups', createList(info.security_groups)));
-        regionDiv.appendChild(details);
-        container.appendChild(regionDiv);
+      Object.entries(obj).forEach(([key, val]) => {
+        if (!Array.isArray(val) || !val.length) return;
+        div.appendChild(renderSection(key.charAt(0).toUpperCase() + key.slice(1),
+                                     createList(val)));
       });
-      return container;
-    }
-
-    function renderSecrets(sm) {
-      return renderSection('Secrets Manager', createList(sm.secrets || []));
-    }
-
-    function renderS3(s3) {
-      return renderSection('S3 Buckets', createList(s3.buckets || []));
-    }
-
-    function renderSNS(sns) {
-      const div = document.createElement('div');
-      div.appendChild(renderSection('Topics', createList(sns.topics)));
-      div.appendChild(renderSection('Subscriptions', createList(sns.subscriptions)));
-      return div;
-    }
-
-    function renderECS(ecs) {
-      const div = document.createElement('div');
-      div.appendChild(renderSection('Clusters', createList(ecs.clusters || [])));
-      if (ecs.services) div.appendChild(renderSection('Services', createList(ecs.services)));
-      if (ecs.tasks) div.appendChild(renderSection('Tasks', createList(ecs.tasks)));
-      return div;
-    }
-
-    function renderPrivilegeEscalation(pe) {
-      return renderSection('Privilege Escalation Paths', createList(pe.paths || []));
+      return div.children.length ? renderSection(title, div) : null;
     }
 
     fetch('/data')
@@ -157,24 +208,71 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
       .then(data => {
         const content = document.getElementById('content');
         content.innerHTML = '';
+
+        // Identity
         content.appendChild(renderIdentity(data.identity || {}));
-        content.appendChild(renderPermissions(data.permissions || {enumerated: [], bruteforced: []}));
-        if (data.iam) content.appendChild(renderSection('IAM', renderIam(data.iam)));
-        if (data.ec2) content.appendChild(renderSection('EC2', renderEC2(data.ec2)));
-        if (data.lambda) content.appendChild(renderLambda(data.lambda));
-        if (data.beanstalk) content.appendChild(renderBeanstalk(data.beanstalk));
-        if (data.secrets_manager) content.appendChild(renderSecrets(data.secrets_manager));
-        if (data.s3) content.appendChild(renderS3(data.s3));
-        if (data.sns) content.appendChild(renderSNS(data.sns));
-        if (data.ecs) content.appendChild(renderECS(data.ecs));
-        if (data.privilege_escalation) content.appendChild(renderPrivilegeEscalation(data.privilege_escalation));
+
+        // Permissions
+        const permsSection = renderPermissions(data.permissions || {});
+        if (permsSection) content.appendChild(permsSection);
+
+        // IAM (users/groups/roles/policies)
+        const iamSec = renderDetailsSection('IAM', data.iam || {});
+        if (iamSec) content.appendChild(iamSec);
+
+        // EC2 Regions
+        const ec2Sec = renderDetailsSection('EC2', data.ec2?.regions || {});
+        if (ec2Sec) content.appendChild(ec2Sec);
+
+        // Lambda
+        if (data.lambda?.functions?.length) {
+          content.appendChild(renderSection(
+            'Lambda Functions',
+            createTableFromObjects(data.lambda.functions)
+          ));
+        }
+
+        // Beanstalk
+        const bsSec = renderListSection('Beanstalk Applications', data.beanstalk?.applications);
+        const bsEnv = renderListSection('Beanstalk Environments', data.beanstalk?.environments);
+        if (bsSec) content.appendChild(bsSec);
+        if (bsEnv) content.appendChild(bsEnv);
+
+        // Secrets Manager
+        if (data.secrets_manager?.secrets?.length) {
+          content.appendChild(renderSection(
+            'Secrets Manager',
+            createTableFromObjects(data.secrets_manager.secrets)
+          ));
+        }
+
+        // S3
+        const s3Sec = renderListSection('S3 Buckets', data.s3?.buckets);
+        if (s3Sec) content.appendChild(s3Sec);
+
+        // SNS
+        const snsTop = renderListSection('SNS Topics', data.sns?.topics);
+        const snsSub = renderListSection('SNS Subscriptions', data.sns?.subscriptions);
+        if (snsTop) content.appendChild(snsTop);
+        if (snsSub) content.appendChild(snsSub);
+
+        // ECS
+        const ecsSec = renderListSection('ECS Clusters', data.ecs?.clusters);
+        if (ecsSec) content.appendChild(ecsSec);
+
+        // Privilege Escalation Paths
+        const peSec = renderListSection('Privilege Escalation Paths',
+                                        data.privilege_escalation?.paths);
+        if (peSec) content.appendChild(peSec);
       })
       .catch(err => {
-        document.getElementById('content').textContent = 'Error loading data: ' + err;
+        document.getElementById('content')
+                .textContent = 'Error loading data: ' + err;
       });
   </script>
 </body>
 </html>'''
+
 
 class CloudTapHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):

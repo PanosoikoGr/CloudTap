@@ -199,7 +199,7 @@
     ]
   },
   {
-    "svc_name": "codestar",
+    "svc_name": "codestar-connections",
     "api_calls": [
       "ListProjects",
       "ListUserProfiles"

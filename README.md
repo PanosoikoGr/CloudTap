@@ -100,6 +100,7 @@ python3 CloudTap.py
 - `colorama`
 - `tqdm`
 - `loguru`
+- `requests`
 - AWS Access Key ID and Secret Access Key with appropriate IAM permissions
 
 ---

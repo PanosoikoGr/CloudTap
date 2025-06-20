@@ -205,6 +205,41 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
       return div.children.length ? renderSection(title, div) : null;
     }
 
+    function createPrivilegeAccordion(paths) {
+      if (!Array.isArray(paths) || !paths.length) return document.createTextNode('None');
+      const wrap = document.createElement('div');
+
+      paths.forEach(p => {
+        const det   = document.createElement('details');
+        const sum   = document.createElement('summary');
+        sum.textContent = `[#${p.id}] ${p.name} — ${p.impact}`;
+        det.appendChild(sum);
+
+        const tbl   = document.createElement('table');
+        const body  = document.createElement('tbody');
+
+        const rows = [
+          ['Description',          p.description],
+          ['Required permissions', (p.required_permissions || []).join(', ') || '—'],
+          ['Optional permissions', (p.optional_permissions || []).join(', ') || '—'],
+          ['Link',                 p.link ? `<a href="${p.link}" target="_blank">${p.link}</a>` : '—']
+        ];
+
+        rows.forEach(([k, v]) => {
+          const tr  = document.createElement('tr');
+          const th  = document.createElement('th'); th.textContent = k;
+          const td  = document.createElement('td'); td.innerHTML   = v;
+          tr.appendChild(th); tr.appendChild(td);  body.appendChild(tr);
+        });
+
+        tbl.appendChild(body);
+        det.appendChild(tbl);
+        wrap.appendChild(det);
+      });
+
+      return wrap;
+    }
+
     fetch('/data')
       .then(resp => resp.json())
       .then(data => {
@@ -262,10 +297,13 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
         const ecsSec = renderListSection('ECS Clusters', data.ecs?.clusters);
         if (ecsSec) content.appendChild(ecsSec);
 
-        // Privilege Escalation Paths
-        const peSec = renderListSection('Privilege Escalation Paths',
-                                        data.privilege_escalation?.paths);
-        if (peSec) content.appendChild(peSec);
+        //Priv Esc
+        if (data.privilege_escalation?.paths?.length) {
+          content.appendChild(
+            renderSection('Privilege Escalation Paths',
+                          createPrivilegeAccordion(data.privilege_escalation.paths))
+          );
+        }
       })
       .catch(err => {
         document.getElementById('content')

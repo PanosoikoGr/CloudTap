@@ -3398,6 +3398,10 @@ except Exception as e:
 logger.info("AWS Security Assessment completed successfully")
 
 # Prompt to launch the web viewer
+print(f"\n{Fore.GREEN}{Back.BLACK}")
+print("=" * 60)
+print("                    Cloud Analysis")
+print("=" * 60)
 response = input("\nWould you like to launch the web viewer now? [y/N]: ")
 if response.strip().lower() in ('y', 'yes'):
     try:

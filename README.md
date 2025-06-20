@@ -8,6 +8,9 @@
 ```
 https://github.com/user-attachments/assets/ef236848-f054-495d-8f36-b215f9ed9105
 
+## Webpage Preview
+![Webpage](https://github.com/user-attachments/assets/dc3f43b1-8955-490c-b55e-6c93797e82a8)
+
 ## Features
 
 - **Permissions Bruteforce** 

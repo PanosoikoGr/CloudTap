@@ -15,7 +15,29 @@ from botocore.exceptions import ProfileNotFound,ClientError,EndpointConnectionEr
 from tqdm import tqdm
 from botocore.config import Config
 
-permissions = [] #Push permission to this list
+permissions = []  # Permissions discovered from IAM enumeration
+bruteforced_permissions = []  # Permissions discovered via bruteforce
+
+# Structure to hold enumeration results for later consumption
+output_data = {
+    "metadata": {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "profile": "",
+        "regions_scanned": [],
+        "tool_version": "1.0.0",
+    },
+    "identity": {},
+    "permissions": {"enumerated": [], "bruteforced": []},
+    "iam": {"users": []},
+    "s3": {"buckets": []},
+    "secrets_manager": {"secrets": []},
+    "privilege_escalation": {"paths": []},
+    "ec2": {"regions": {}},
+    "sns": {"topics": [], "subscriptions": []},
+    "beanstalk": {"applications": [], "environments": []},
+    "lambda": {"functions": []},
+    "ecs": {"clusters": []},
+}
 
 AWS_REGIONS = [
     'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
@@ -319,6 +341,7 @@ def analyze_lambda_functions(session, current_region):
     
     total_functions_found = 0
     total_downloaded = 0
+    collected_entries = []
     
     # Process each region
     for region in regions_to_scan:
@@ -327,9 +350,10 @@ def analyze_lambda_functions(session, current_region):
         
         try:
             lambda_client = session.client("lambda", region_name=region)
-            region_functions, region_downloaded = analyze_lambda_functions_in_region(lambda_client, lambda_dir, region)
+            region_functions, region_downloaded, region_entries = analyze_lambda_functions_in_region(lambda_client, lambda_dir, region)
             total_functions_found += region_functions
             total_downloaded += region_downloaded
+            collected_entries.extend(region_entries)
             
         except Exception as e:
             error_msg = f"Error scanning region {region}: {e}"
@@ -342,13 +366,19 @@ def analyze_lambda_functions(session, current_region):
     print(f"  {Fore.CYAN}Total functions found: {total_functions_found}{Style.RESET_ALL}")
     print(f"  {Fore.GREEN}Total functions downloaded: {total_downloaded}{Style.RESET_ALL}")
     print(f"  {Fore.MAGENTA}Downloads saved to: ./lambda_downloads/{Style.RESET_ALL}")
-    
+
     logger.info(f"Lambda analysis complete across {len(regions_to_scan)} regions: {total_functions_found} functions, {total_downloaded} downloaded")
+
+    for entry in collected_entries:
+        if entry["region"] not in output_data["metadata"]["regions_scanned"]:
+            output_data["metadata"]["regions_scanned"].append(entry["region"])
+    output_data["lambda"]["functions"].extend(collected_entries)
 
 def analyze_lambda_functions_in_region(lambda_client, lambda_dir, region):
     """Analyze Lambda functions in a specific region"""
     region_functions_count = 0
     region_downloaded_count = 0
+    region_entries = []
     
     try:
         # List all Lambda functions in this region
@@ -376,6 +406,8 @@ def analyze_lambda_functions_in_region(lambda_client, lambda_dir, region):
             for func in functions:
                 function_name = func['FunctionName']
                 pbar.set_description(f"Analyzing {function_name[:30]}...")
+
+                env_vars = {}
                 
                 print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
                 print(f"{Fore.CYAN}Function: {function_name}{Style.RESET_ALL}")
@@ -482,6 +514,18 @@ def analyze_lambda_functions_in_region(lambda_client, lambda_dir, region):
                 print(f"\n{Fore.YELLOW}📥 Attempting to download function code...{Style.RESET_ALL}")
                 if download_lambda_code(lambda_client, function_name, lambda_dir / region):
                     downloaded_count += 1
+
+                entry = {
+                    "region": region,
+                    "name": func["FunctionName"],
+                    "runtime": func.get("Runtime"),
+                    "handler": func.get("Handler"),
+                    "arn": func.get("FunctionArn"),
+                    "role": func.get("Role"),
+                }
+                if env_vars:
+                    entry["env_var_keys"] = list(env_vars.keys())
+                region_entries.append(entry)
                 
                 pbar.update(1)
         
@@ -494,13 +538,13 @@ def analyze_lambda_functions_in_region(lambda_client, lambda_dir, region):
         
         logger.info(f"Region {region} analysis complete: {len(functions)} functions, {downloaded_count} downloaded")
         
-        return region_functions_count, region_downloaded_count
+        return region_functions_count, region_downloaded_count, region_entries
         
     except Exception as e:
         error_msg = f"Error during Lambda analysis in {region}: {e}"
         logger.error(error_msg)
         print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-        return 0, 0
+        return 0, 0, []
 def analyze_ecs_cluster(ecs_client, cluster_name, region):
     """Analyze a specific ECS cluster and its resources"""
     try:
@@ -862,6 +906,7 @@ def analyze_ecs_clusters(session, current_region):
     total_clusters_found = 0
     total_services_found = 0
     total_tasks_found = 0
+    cluster_entries = []
     
     # Process each region
     for region in regions_to_scan:
@@ -890,11 +935,22 @@ def analyze_ecs_clusters(session, current_region):
                 # Count services and tasks for summary
                 try:
                     services_response = ecs_client.list_services(cluster=cluster_name)
-                    total_services_found += len(services_response.get('serviceArns', []))
-                    
+                    service_count = len(services_response.get('serviceArns', []))
+                    total_services_found += service_count
+
                     running_tasks = ecs_client.list_tasks(cluster=cluster_name, desiredStatus='RUNNING')
                     stopped_tasks = ecs_client.list_tasks(cluster=cluster_name, desiredStatus='STOPPED')
-                    total_tasks_found += len(running_tasks.get('taskArns', [])) + len(stopped_tasks.get('taskArns', []))
+                    task_count = len(running_tasks.get('taskArns', [])) + len(stopped_tasks.get('taskArns', []))
+                    total_tasks_found += task_count
+
+                    cluster_entries.append({
+                        "region": region,
+                        "name": cluster_name,
+                        "services": service_count,
+                        "tasks": task_count,
+                    })
+                    if region not in output_data["metadata"]["regions_scanned"]:
+                        output_data["metadata"]["regions_scanned"].append(region)
                 except Exception as e:
                     logger.error(f"Error counting resources in cluster {cluster_name}: {e}")
             
@@ -911,6 +967,8 @@ def analyze_ecs_clusters(session, current_region):
     print(f"  {Fore.CYAN}Total tasks found: {total_tasks_found}{Style.RESET_ALL}")
     
     logger.info(f"ECS analysis complete across {len(regions_to_scan)} regions: {total_clusters_found} clusters, {total_services_found} services, {total_tasks_found} tasks")
+
+    output_data["ecs"]["clusters"].extend(cluster_entries)
 
 def analyze_ec2_instances(session, current_region):
     """Comprehensive EC2 instance analysis for penetration testing"""
@@ -1183,6 +1241,8 @@ def get_instance_profile_details(iam_client, profile_arn, instance_id):
 def analyze_ec2_in_region(ec2_client, iam_client, region):
     """Analyze EC2 instances in a specific region"""
     try:
+        if region not in output_data["metadata"]["regions_scanned"]:
+            output_data["metadata"]["regions_scanned"].append(region)
         # Get all instances
         print(f"{Fore.BLUE}Discovering EC2 instances in {region}...{Style.RESET_ALL}")
         paginator = ec2_client.get_paginator('describe_instances')
@@ -1485,7 +1545,15 @@ def analyze_ec2_in_region(ec2_client, iam_client, region):
         print(f"  {Fore.YELLOW}Security groups: {len(security_groups_seen)}{Style.RESET_ALL}")
         
         logger.info(f"Region {region} EC2 analysis complete: {len(instances)} instances ({running_instances} running), {total_volumes} volumes")
-        
+
+        region_entry = {
+            "instances": len(instances),
+            "running": running_instances,
+            "volumes": total_volumes,
+            "security_groups": list(security_groups_seen),
+        }
+        output_data["ec2"]["regions"][region] = region_entry
+
         return len(instances), running_instances, total_volumes, len(security_groups_seen)
         
     except Exception as e:
@@ -1532,10 +1600,15 @@ def analyze_beanstalk_environments(session, current_region):
         
         try:
             beanstalk_client = session.client("elasticbeanstalk", region_name=region)
-            region_apps, region_envs, region_vars = analyze_beanstalk_in_region(beanstalk_client, region)
+            region_apps, region_envs, region_vars, region_entries = analyze_beanstalk_in_region(beanstalk_client, region)
             total_applications += region_apps
             total_environments += region_envs
             total_env_vars += region_vars
+            output_data["beanstalk"]["applications"].extend(region_entries)
+            for entry in region_entries:
+                output_data["beanstalk"]["environments"].extend(entry.get("environments", []))
+            if region not in output_data["metadata"]["regions_scanned"]:
+                output_data["metadata"]["regions_scanned"].append(region)
             
         except Exception as e:
             error_msg = f"Error scanning Beanstalk in region {region}: {e}"
@@ -1569,6 +1642,7 @@ def analyze_beanstalk_in_region(beanstalk_client, region):
         
         total_environments = 0
         total_env_vars = 0
+        app_entries = []
         
         # Process each application
         for app in apps:
@@ -1611,10 +1685,14 @@ def analyze_beanstalk_in_region(beanstalk_client, region):
                 print(f"\n{Fore.BLUE}🌍 Environments ({len(envs)} total):{Style.RESET_ALL}")
                 total_environments += len(envs)
                 
+                env_names = []
+                env_var_map = {}
+
                 # Process each environment
                 for env in envs:
                     env_name = env['EnvironmentName']
                     env_id = env['EnvironmentId']
+                    env_names.append(env_name)
                     
                     print(f"\n  {Fore.CYAN}--- Environment: {env_name} ---{Style.RESET_ALL}")
                     print(f"  {Fore.GREEN}Environment ID: {env_id}{Style.RESET_ALL}")
@@ -1666,6 +1744,7 @@ def analyze_beanstalk_in_region(beanstalk_client, region):
                                 for var_name, var_value in env_vars:
                                     print(f"    {Fore.RED}{var_name}: {var_value}{Style.RESET_ALL}")
                                 logger.warning(f"Found {len(env_vars)} environment variables in {env_name}")
+                                env_var_map[env_name] = [name for name, _ in env_vars]
                             else:
                                 print(f"\n  {Fore.BLUE}Environment Variables: None{Style.RESET_ALL}")
                             
@@ -1732,6 +1811,13 @@ def analyze_beanstalk_in_region(beanstalk_client, region):
                 error_msg = f"Error getting environments for application {app_name}: {e}"
                 logger.error(error_msg)
                 print(f"  {Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+
+            app_entries.append({
+                "region": region,
+                "application": app_name,
+                "environments": env_names,
+                "env_var_keys": env_var_map,
+            })
         
         # Region summary
         print(f"\n{Fore.GREEN}📊 {region} Beanstalk Summary:{Style.RESET_ALL}")
@@ -1741,18 +1827,19 @@ def analyze_beanstalk_in_region(beanstalk_client, region):
         
         logger.info(f"Region {region} Beanstalk analysis complete: {len(apps)} apps, {total_environments} environments, {total_env_vars} env vars")
         
-        return len(apps), total_environments, total_env_vars
+        return len(apps), total_environments, total_env_vars, app_entries
         
     except Exception as e:
         error_msg = f"Error during Beanstalk analysis in {region}: {e}"
         logger.error(error_msg)
         print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-        return 0, 0, 0
+        return 0, 0, 0, []
 
 def analyze_sns_topics_in_region(sns_client, region):
     """Analyze SNS topics in a specific region"""
     topics_found = 0
     subscribed_count = 0
+    topic_entries = []
     
     try:
         print(f"\n{Fore.BLUE}📡 Analyzing SNS topics in {region}...{Style.RESET_ALL}")
@@ -1856,6 +1943,13 @@ def analyze_sns_topics_in_region(sns_client, region):
                         logger.error(error_msg)
                 else:
                     print(f"    {Fore.RED}❌ Invalid email address{Style.RESET_ALL}")
+
+            topic_entries.append({
+                "region": region,
+                "name": topic_name,
+                "arn": topic_arn,
+                "subscription_count": len(subscriptions),
+            })
             
             print()  # Add spacing between topics
             
@@ -1863,9 +1957,9 @@ def analyze_sns_topics_in_region(sns_client, region):
         error_msg = f"Error analyzing SNS topics in region {region}: {e}"
         logger.error(error_msg)
         print(f"  {Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-        return 0, 0
-    
-    return topics_found, subscribed_count
+        return 0, 0, []
+
+    return topics_found, subscribed_count, topic_entries
 
 
 def analyze_sns_topics(session, current_region):
@@ -1909,7 +2003,10 @@ def analyze_sns_topics(session, current_region):
         
         try:
             sns_client = session.client("sns", region_name=region)
-            region_topics, region_subscribed = analyze_sns_topics_in_region(sns_client, region)
+            region_topics, region_subscribed, topic_entries = analyze_sns_topics_in_region(sns_client, region)
+            output_data["sns"]["topics"].extend(topic_entries)
+            if region not in output_data["metadata"]["regions_scanned"]:
+                output_data["metadata"]["regions_scanned"].append(region)
             
             if region_topics > 0:
                 regions_with_topics += 1
@@ -1992,6 +2089,15 @@ def list_all_sns_subscriptions(session, current_region):
                     print(f"        Endpoint: {masked_endpoint}")
                     print(f"        Status: {sub.get('SubscriptionArn', 'Pending')}")
                     print()
+
+                    output_data["sns"]["subscriptions"].append({
+                        "region": region,
+                        "topic_arn": topic_arn,
+                        "protocol": protocol,
+                        "endpoint": masked_endpoint,
+                    })
+                    if region not in output_data["metadata"]["regions_scanned"]:
+                        output_data["metadata"]["regions_scanned"].append(region)
                 
                 total_subscriptions += len(subscriptions)
             else:
@@ -2172,6 +2278,8 @@ def list_and_download_bucket(s3_client, bucket_name):
             region = location.get('LocationConstraint', 'us-east-1')
             print(f"{Fore.CYAN}Bucket region: {region}{Style.RESET_ALL}")
             logger.info(f"Bucket {bucket_name} region: {region}")
+            if region not in output_data["metadata"]["regions_scanned"]:
+                output_data["metadata"]["regions_scanned"].append(region)
         except Exception as e:
             logger.warning(f"Could not get bucket location for {bucket_name}: {e}")
             print(f"{Fore.YELLOW}Could not get bucket location: {e}{Style.RESET_ALL}")
@@ -2202,7 +2310,7 @@ def list_and_download_bucket(s3_client, bucket_name):
         
         # Download with progress bar
         downloaded_count = 0
-        with tqdm(total=total_objects, desc=f"Downloading from {bucket_name}", 
+        with tqdm(total=total_objects, desc=f"Downloading from {bucket_name}",
                  unit="file", colour="green") as pbar:
             
             for obj in objects_list:
@@ -2224,6 +2332,14 @@ def list_and_download_bucket(s3_client, bucket_name):
         print(f"  {Fore.MAGENTA}Total size: {total_size:,} bytes ({total_size/1024/1024:.2f} MB){Style.RESET_ALL}")
         
         logger.info(f"Bucket {bucket_name} summary: {downloaded_count}/{total_objects} downloaded ({success_rate:.1f}%)")
+
+        # Store results for JSON output
+        bucket_entry = {
+            "name": bucket_name,
+            "region": region,
+            "objects": [obj["Key"] for obj in objects_list],
+        }
+        output_data["s3"]["buckets"].append(bucket_entry)
         
     except Exception as e:
         error_msg = f"Error processing bucket {bucket_name}: {e}"
@@ -2558,7 +2674,7 @@ def camel_to_snake(name):
     return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
 def bruteforce_aws_permissions_from_json(json_path, session):
-    global permissions
+    global permissions, bruteforced_permissions
 
     valid_services = boto3.session.Session().get_available_services()
 
@@ -2589,6 +2705,8 @@ def bruteforce_aws_permissions_from_json(json_path, session):
                     perm_string = f"{svc_name}:{api_call}"
                     if perm_string not in permissions:
                         permissions.append(perm_string)
+                    if perm_string not in bruteforced_permissions:
+                        bruteforced_permissions.append(perm_string)
                 except (ClientError, EndpointConnectionError):
                     # Expected errors: permission denied or endpoint not available
                     pass
@@ -2656,9 +2774,12 @@ if args.keys:
         secret_access_key = credentials['secret_key']
         session_token = credentials.get('session_token')
         region = credentials['region']
+        if region not in output_data["metadata"]["regions_scanned"]:
+            output_data["metadata"]["regions_scanned"].append(region)
         
         print(f"{Fore.GREEN}✅ Successfully loaded credentials from profile '{args.keys}'{Style.RESET_ALL}")
         print(f"{Fore.CYAN}📍 Region: {region}{Style.RESET_ALL}")
+        output_data["metadata"]["profile"] = args.keys
         
         if session_token:
             print(f"{Fore.MAGENTA}🎫 Using temporary credentials (session token found){Style.RESET_ALL}")
@@ -2679,6 +2800,9 @@ else:
     secret_access_key = input(f"{Fore.GREEN}Enter AWS Secret Access Key: {Style.RESET_ALL}").strip()
     session_token = input(f"{Fore.GREEN}Enter AWS Session Token (leave blank if not using temporary credentials): {Style.RESET_ALL}").strip()
     region = input(f"{Fore.GREEN}Enter AWS Region [default: us-east-1]: {Style.RESET_ALL}").strip() or 'us-east-1'
+    output_data["metadata"]["profile"] = "manual"
+    if region not in output_data["metadata"]["regions_scanned"]:
+        output_data["metadata"]["regions_scanned"].append(region)
 
 # Always prompt for bucket and other options regardless of how credentials were obtained
 bucket = input(f"{Fore.GREEN}Enter specific S3 Bucket name (leave blank to scan all accessible buckets): {Style.RESET_ALL}").strip()
@@ -2732,6 +2856,12 @@ try:
     print(f"{Fore.CYAN}UserId: {sts_caller_info['UserId']}{Style.RESET_ALL}")
     print(f"{Fore.CYAN}Account: {sts_caller_info['Account']}{Style.RESET_ALL}")
     print(f"{Fore.CYAN}ARN: {sts_caller_info['Arn']}{Style.RESET_ALL}")
+    output_data["identity"] = {
+        "UserId": sts_caller_info["UserId"],
+        "Account": sts_caller_info["Account"],
+        "Arn": sts_caller_info["Arn"],
+        "credentialType": "temporary" if session_token else "permanent",
+    }
     
     # Show credential type information
     if session_token:
@@ -2762,14 +2892,16 @@ except Exception as e:
 if username and not session_token:
     print(f"\n{Fore.YELLOW}=== IAM Info for User: {username} ==={Style.RESET_ALL}")
     logger.info(f"Analyzing IAM permissions for user: {username}")
-    
+
     try:
         # Attached managed policies
         attached_policies = iam_client.list_attached_user_policies(UserName=username)
         print(f"\n{Fore.MAGENTA}Attached Managed Policies:{Style.RESET_ALL}")
+        attached_policy_names = []
         for policy in attached_policies.get("AttachedPolicies", []):
             print(f" {Fore.GREEN}- {policy['PolicyName']} (ARN: {policy['PolicyArn']}){Style.RESET_ALL}")
             logger.info(f"Found attached policy: {policy['PolicyName']}")
+            attached_policy_names.append(policy['PolicyName'])
             
             policy_detail = iam_client.get_policy(PolicyArn=policy["PolicyArn"])
             version_id = policy_detail["Policy"]["DefaultVersionId"]
@@ -2817,9 +2949,11 @@ if username and not session_token:
         # Inline policies
         inline_policies = iam_client.list_user_policies(UserName=username)
         print(f"\n{Fore.MAGENTA}Inline Policies:{Style.RESET_ALL}")
+        inline_policy_names = []
         for policy_name in inline_policies.get("PolicyNames", []):
             print(f" {Fore.GREEN}- {policy_name}{Style.RESET_ALL}")
             logger.info(f"Found inline policy: {policy_name}")
+            inline_policy_names.append(policy_name)
             
             policy_doc = iam_client.get_user_policy(UserName=username, PolicyName=policy_name)
             print(f"   {Fore.BLUE}Permissions:{Style.RESET_ALL}")
@@ -2829,10 +2963,12 @@ if username and not session_token:
         # Group memberships
         user_groups = iam_client.list_groups_for_user(UserName=username)
         print(f"\n{Fore.MAGENTA}Groups:{Style.RESET_ALL}")
+        group_names = []
         for group in user_groups.get("Groups", []):
             group_name = group['GroupName']
             print(f" {Fore.GREEN}- {group_name} (ARN: {group['Arn']}){Style.RESET_ALL}")
             logger.info(f"Found group membership: {group_name}")
+            group_names.append(group_name)
 
             # Managed policies attached to group
             attached_group_policies = iam_client.list_attached_group_policies(GroupName=group_name)
@@ -2889,6 +3025,15 @@ if username and not session_token:
                 print(f"     {Fore.BLUE}Permissions:{Style.RESET_ALL}")
                 print_policy_document(policy_doc["PolicyDocument"])
                 extract_permissions_from_policy(policy_doc["PolicyDocument"])
+
+        # Store summary for JSON output
+        user_entry = {
+            "username": username,
+            "attached_policies": attached_policy_names,
+            "inline_policies": inline_policy_names,
+            "groups": group_names,
+        }
+        output_data["iam"]["users"].append(user_entry)
 
     except Exception as e:
         error_msg = f"Error fetching IAM details for {username}: {e}"
@@ -2970,6 +3115,7 @@ try:
                         print(f"\n{Fore.GREEN}Secret: {name}{Style.RESET_ALL}")
                         print(f"{Fore.YELLOW}{json.dumps(secret_dump, indent=4, sort_keys=True, default=custom_serializer)}{Style.RESET_ALL}")
                         logger.info(f"Successfully retrieved secret: {name}")
+                        output_data["secrets_manager"]["secrets"].append({"name": name, "value": secret_dump.get("SecretString")})
                     except Exception as e:
                         error_msg = f"Error retrieving secret '{name}': {e}"
                         logger.error(error_msg)
@@ -3196,6 +3342,9 @@ ask_to_bruteforce(session)
 
 # Analyze permissions
 results = analyzer.analyze_permissions(permissions)
+output_data["permissions"]["enumerated"] = permissions
+output_data["permissions"]["bruteforced"] = bruteforced_permissions
+output_data["privilege_escalation"]["paths"] = results
     
 # Print results
 analyzer.print_results(results)
@@ -3211,5 +3360,14 @@ print(f"{Fore.GREEN}✅ AWS Security Assessment Complete{Style.RESET_ALL}")
 print(f"{Fore.CYAN}📁 S3 downloads saved to: ./s3_downloads/{Style.RESET_ALL}")
 print(f"{Fore.MAGENTA}📋 Detailed log saved to: aws_security_assessment.log{Style.RESET_ALL}")
 print(f"{Fore.YELLOW}🔍 Check the output above for IAM permissions, secrets, and role analysis{Style.RESET_ALL}")
+
+# Write results to JSON file
+try:
+    with open("cloudtap_output.json", "w") as f:
+        json.dump(output_data, f, indent=2, default=custom_serializer)
+    print(f"{Fore.GREEN}📄 Results written to cloudtap_output.json{Style.RESET_ALL}")
+    logger.success("Results saved to cloudtap_output.json")
+except Exception as e:
+    logger.error(f"Failed to write output JSON: {e}")
 
 logger.success("AWS Security Assessment completed successfully")

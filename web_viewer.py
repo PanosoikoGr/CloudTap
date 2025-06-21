@@ -6,32 +6,46 @@ from pathlib import Path
 import logging
 import sys
 
-PORT = 8001
+PORT = 8000
 OUTPUT_FILE = Path('cloudtap_output.json')
 
 MAIN_PAGE_HTML = '''<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <!-- favicon made from a ☁️ emoji -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 128 128%22><text y=%22.9em%22 font-size=%22120%22>☁️</text></svg>">
   <title>CloudTap Results</title>
   <style>
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      margin: 0;
-      padding: 20px;
-      background-color: #eaf0f6;
-      color: #333;
+    :root{
+  --bg: #eaf0f6; --fg:#333;
+  --h1:#2c3e50;  --h2:#2980b9;
+  --sec-bg:#fff; --shadow:0 4px 10px rgba(0,0,0,.08);
+  --th-bg:#f5f8fa; --border:#dcdfe3;
+  --tr-even:#f9f9f9; --tr-hover:#eef2f7;
     }
-    h1 {
-      color: #2c3e50;
-      margin-bottom: 30px;
-      margin-left: 5%;
+    body.dark{
+      --bg:#1e1e20;   --fg:#e7e7e7;
+      --h1:#f6f6f6;   --h2:#6cb6ff;
+      --sec-bg:#2a2a2d; --shadow:0 4px 10px rgba(0,0,0,.6);
+      --th-bg:#2f2f33; --border:#444;
+      --tr-even:#262629; --tr-hover:#303035;
+    }
+    /* ---------- 1B. component styles (unchanged selectors, now using vars) ---------- */
+    body{font-family:'Segoe UI',sans-serif;margin:0;padding:20px;
+          background:var(--bg);color:var(--fg);}
+    h1{color:var(--h1);margin-bottom:30px;margin-left:5%;}
+    /* …(everything else the same but switch literal colors → var(--…))… */
+
+    /* ---------- 1C. toggle button ---------- */
+    #themeToggle{
+      position:fixed;top:18px;right:24px;z-index:999;
+      font-size:20px;background:none;border:none;
+      cursor:pointer;user-select:none;
     }
     table td,
-    table pre {
-    word-break: break-all;   /* break within long words */
-    white-space: pre-wrap;   /* keep all characters, wrap as needed */
-    }
+    table pre { word-break: break-all; white-space: pre-wrap; }
     #content {
       display: flex;
       flex-direction: column;
@@ -39,38 +53,35 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
       width: 100%;
     }
     section {
-      background: #fff;
+      background: var(--sec-bg);
       border-radius: 10px;
       padding: 20px;
       margin: 20px 5% 20px auto;
       width: 90%;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+      box-shadow: var(--shadow);
     }
     h2 {
-      color: #2980b9;
+      color: var(--h2);
       margin-top: 0;
     }
-    table {
+    table{
       border-collapse: collapse;
-      width: 100%;
-      margin-top: 10px;
-      word-break: break-word;
+      width:100%;
+      margin-top:10px;
+      word-break:break-word;
     }
     th, td {
-      border: 1px solid #dcdfe3;
+      border: 1px solid var(--border);
       padding: 10px 14px;
       text-align: left;
       vertical-align: top;
     }
     th {
-      background-color: #f5f8fa;
+      background: var(--tr-even);
       font-weight: bold;
     }
-    tr:nth-child(even) {
-      background-color: #f9f9f9;
-    }
     tr:hover {
-      background-color: #eef2f7;
+      background:var(--tr-hover);
     }
     .permissions-wrapper {
       display: flex;
@@ -98,18 +109,19 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
       padding: .75em 1em;
       margin: 20px 5% 20px auto;
       width: 90%;
-      background-color: #fff;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+      background:var(--sec-bg);
+      box-shadow: 0 2px 6px var(--shadow);
     }
     summary {
       font-weight: bold;
       cursor: pointer;
-      color: #2c3e50;
+      color:var(--h1);
     }
   </style>
 </head>
 <body>
   <h1>☁️ CloudTap Results</h1>
+  <button id="themeToggle" aria-label="Toggle dark mode">🌙</button>
   <div id="content">Loading...</div>
   <script>
     function createTableFromObjects(list) {
@@ -621,6 +633,23 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
 
       return wrap;
     }
+    (function(){
+      const BODY = document.body;
+      const BTN  = document.getElementById('themeToggle');
+
+      // apply saved pref or media default
+      const saved = localStorage.getItem('ct-theme');
+      if(saved ? saved==='dark' : window.matchMedia('(prefers-color-scheme: dark)').matches){
+        BODY.classList.add('dark');
+        BTN.textContent = '☀️';
+      }
+
+      BTN.addEventListener('click', () =>{
+        const dark = BODY.classList.toggle('dark');
+        BTN.textContent = dark ? '☀️' : '🌙';
+        localStorage.setItem('ct-theme', dark ? 'dark' : 'light');
+      });
+    })();
     fetch('/data')
       .then(resp => resp.json())
       .then(data => {
@@ -768,7 +797,11 @@ class CloudTapHandler(http.server.SimpleHTTPRequestHandler):
 
 # ---------- server loop ----------
 def run_server():
-    with socketserver.TCPServer(("0.0.0.0", PORT), CloudTapHandler) as httpd:
+    # allow_reuse_address lets the OS re-allocate the port right away
+    class ReusableTCPServer(socketserver.TCPServer):
+        allow_reuse_address = True
+
+    with ReusableTCPServer(("0.0.0.0", PORT), CloudTapHandler) as httpd:
         url = f"http://localhost:{PORT}/"
         print(f"Serving CloudTap results at {url}")
         try:
@@ -779,7 +812,12 @@ def run_server():
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print("\nShutting down server...")
+            print("\nShutting down server…")
+        finally:
+            # ensure the loop stops and the socket is closed
+            httpd.shutdown()
+            httpd.server_close()
+            print("Server fully closed.")
 
 # ---------- entry point ----------
 if __name__ == "__main__":

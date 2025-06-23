@@ -544,6 +544,18 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
       return wrap;
     }
 
+    function hasRoleData(roles) {
+      return Object.values(roles).some(value => {
+        if (Array.isArray(value)) {
+          return value.length > 0;
+        }
+        if (typeof value === 'object' && value !== null) {
+          return Object.keys(value).length > 0;
+        }
+        return Boolean(value); // fallback for primitives (rare)
+      });
+    }
+
     /* ------------- ROLES accordion ------------- */
     function createRolesAccordion(rolesObj) {
       if (!rolesObj || Object.keys(rolesObj).length === 0) {
@@ -671,13 +683,12 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
           );
         }
         // ROLES
-        if (data.roles && Object.keys(data.roles).length) {
+        if (data.roles && hasRoleData(data.roles)) {
           content.appendChild(
             renderSection('Roles (Discovery & Assumption)',
                           createRolesAccordion(data.roles))
           );
         }
-
 
         // EC2 Region Summary
         if (data.ec2?.regions && Object.keys(data.ec2.regions).length) {

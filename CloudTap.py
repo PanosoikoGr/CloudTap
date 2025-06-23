@@ -3348,6 +3348,7 @@ if not session_token:
                 roles_pbar.update(1)
         
         # Strategy 2: Brute force attempt all roles (based on user permissions)
+        role_details = {}
         print(f"\n{Fore.BLUE}Strategy 2: Brute force role assumption attempts...{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}Attempting to assume all roles (user has sts:AssumeRole permissions)...{Style.RESET_ALL}")
 

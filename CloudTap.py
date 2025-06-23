@@ -27,7 +27,7 @@ group_entries           = []   # NEW
 # Structure to hold enumeration results for later consumption
 output_data = {
     "metadata": {
-        "timestamp": datetime.isoformat() + "Z",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
         "profile": "",
         "regions_scanned": [],
         "tool_version": "1.0.0",

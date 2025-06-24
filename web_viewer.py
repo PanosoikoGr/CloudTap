@@ -6,7 +6,7 @@ from pathlib import Path
 import logging
 import sys
 
-PORT = 8000
+PORT = 8001
 OUTPUT_FILE = Path('cloudtap_output.json')
 
 MAIN_PAGE_HTML = '''<!DOCTYPE html>
@@ -117,10 +117,89 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
       cursor: pointer;
       color:var(--h1);
     }
-  </style>
+    /* Container: invisible strip on the left */
+    #toc-container {
+      position: fixed;
+      top: 100px;                      /* align with header */
+      left: 0;
+      height: calc(100vh - 100px);
+      width: 50px;                     /* enough to cover the handle */
+      overflow: visible;               /* let the menu slide out */
+      z-index: 1000;
+      pointer-events: none;            /* only children receive pointer events */
+    }
+
+    /* The vertical “MENU” handle */
+    #toc-handle {
+      pointer-events: auto;
+      position: absolute;
+      top: 50%;                        
+      left: 15px;                      /* moves the handle 20px into the page */
+      transform: translate(-50%, -50%) rotate(-90deg);
+      transform-origin: center;
+      background: var(--sec-bg);
+      padding: 6px 12px;
+      border-top-right-radius: 6px;
+      border-bottom-right-radius: 6px;
+      box-shadow: var(--shadow);
+      font-weight: bold;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    /* The sliding menu (initially fully hidden off-screen) */
+    #toc {
+      pointer-events: auto;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 200px;
+      transform: translateX(-100%);    /* completely off-screen */
+      transition: transform 0.3s ease;
+      background: var(--sec-bg);
+      box-shadow: var(--shadow);
+      overflow-y: auto;
+      height: 100%;
+    }
+
+    /* Slide the menu in when you hover the container (handle or hidden area) */
+    #toc-container:hover #toc {
+      transform: translateX(0);
+    }
+
+    /* TOC list styling */
+    #toc .toc-list {
+      list-style: none;
+      margin: 0;
+      padding: 12px;
+    }
+    #toc .toc-list li + li {
+      margin-top: 8px;
+    }
+    #toc .toc-list a {
+      text-decoration: none;
+      color: var(--h2);
+    }
+    #toc .toc-list a:hover {
+      text-decoration: underline;
+    }
+
+    /* Smooth scroll for anchor links */
+    html {
+      scroll-behavior: smooth;
+    }
+
+      </style>
 </head>
 <body>
   <h1>☁️ CloudTap Results</h1>
+  <!-- TOC container with a vertical MENU handle -->
+  <div id="toc-container">
+    <div id="toc-handle">MENU</div>
+    <nav id="toc">
+      <!-- <ul class="toc-list">…generated links…</ul> -->
+    </nav>
+  </div>
   <button id="themeToggle" aria-label="Toggle dark mode">🌙</button>
   <div id="content">Loading...</div>
   <script>
@@ -181,7 +260,9 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
     }
 
     function renderSection(title, content) {
+      const slug = title.toLowerCase().replace(/\s+/g, '-');
       const section = document.createElement('section');
+      section.id = slug;
       const h2 = document.createElement('h2');
       h2.textContent = title;
       section.appendChild(h2);
@@ -771,6 +852,26 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
                           createPrivilegeAccordion(data.privilege_escalation.paths))
           );
         }
+
+        // after you populate `content.innerHTML = ''` and append all sections...
+        const toc = document.getElementById('toc');
+        const headings = document.querySelectorAll('#content section h2');
+        if (headings.length) {
+          const ul = document.createElement('ul');
+          ul.className = 'toc-list';
+          headings.forEach(h2 => {
+            const li = document.createElement('li');
+            const a  = document.createElement('a');
+            const title = h2.textContent;
+            const slug  = h2.parentElement.id;
+            a.textContent = title;
+            a.href = `#${slug}`;
+            li.appendChild(a);
+            ul.appendChild(li);
+          });
+          toc.appendChild(ul);
+        }
+
       })
       .catch(err => {
         document.getElementById('content')

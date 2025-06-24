@@ -16,6 +16,7 @@ from tqdm import tqdm
 from botocore.config import Config
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 permissions = []  # Permissions discovered from IAM enumeration
 bruteforced_permissions = []  # Permissions discovered via bruteforce
@@ -2728,7 +2729,7 @@ def camel_to_snake(name):
     s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
     return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
-def bruteforce_aws_permissions_from_json(json_path, session):
+def bruteforce_aws_permissions_from_json(json_path, session, max_workers=20):
     global permissions, bruteforced_permissions
 
     valid_services = boto3.session.Session().get_available_services()
@@ -2741,34 +2742,38 @@ def bruteforce_aws_permissions_from_json(json_path, session):
         api_calls = service["api_calls"]
 
         if svc_name not in valid_services:
-            logger.warning(f"Skipping {svc_name} - not a valid boto3 service")
+            logger.warning(f"Skipping {svc_name} – not a valid boto3 service")
             continue
 
+        # init client once per service
         try:
-            # Add timeouts to prevent hang-ups
-            timeout_config = Config(connect_timeout=3, read_timeout=3, retries={'max_attempts': 1})
-            client = session.client(svc_name, config=timeout_config)
+            timeout_cfg = Config(connect_timeout=3, read_timeout=3, retries={'max_attempts': 1})
+            client = session.client(svc_name, config=timeout_cfg)
         except Exception as e:
-            logger.warning(f"Skipping {svc_name} - client init failed: {e}")
+            logger.warning(f"Skipping {svc_name} – client init failed: {e}")
             continue
 
-        with tqdm(total=len(api_calls), desc=f"[{svc_name.upper()}]", unit="call", colour="green") as pbar:
-            for api_call in api_calls:
-                try:
-                    method = getattr(client, camel_to_snake(api_call))
-                    method()
-                    perm_string = f"{svc_name}:{api_call}"
-                    if perm_string not in permissions:
-                        permissions.append(perm_string)
-                    if perm_string not in bruteforced_permissions:
-                        bruteforced_permissions.append(perm_string)
-                except (ClientError, EndpointConnectionError):
-                    # Expected errors: permission denied or endpoint not available
-                    pass
-                except Exception:
-                    # Catch-all for timeouts, hangs, etc.
-                    pass
-                finally:
+        # helper for each API call
+        def try_call(api_call):
+            try:
+                getattr(client, camel_to_snake(api_call))()
+                return f"{svc_name}:{api_call}"
+            except (ClientError, EndpointConnectionError):
+                return None
+            except Exception:
+                return None
+
+        # run them in parallel, show a single tqdm bar per service
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = { pool.submit(try_call, api): api for api in api_calls }
+            with tqdm(total=len(futures), desc=f"[{svc_name.upper()}]", unit="call", colour="green") as pbar:
+                for fut in as_completed(futures):
+                    perm = fut.result()
+                    if perm:
+                        if perm not in permissions:
+                            permissions.append(perm)
+                        if perm not in bruteforced_permissions:
+                            bruteforced_permissions.append(perm)
                     pbar.update(1)
 
 def ask_to_bruteforce(session):

@@ -2322,16 +2322,18 @@ def list_and_download_bucket(s3_client, bucket_name):
     """Recursively list and download all objects from a bucket"""
     print(f"\n{Fore.YELLOW}=== Processing Bucket: {bucket_name} ==={Style.RESET_ALL}")
     logger.info(f"Starting to process bucket: {bucket_name}")
-    
+
     # Create local directory for bucket
     bucket_dir = Path("s3_downloads") / safe_filename(bucket_name)
     bucket_dir.mkdir(parents=True, exist_ok=True)
-    
+
+    region = None  # ← CHANGED: initialize region so it's always in scope
+
     try:
         # Get bucket location
         try:
             location = s3_client.get_bucket_location(Bucket=bucket_name)
-            region = location.get('LocationConstraint', 'us-east-1')
+            region = location.get('LocationConstraint') or 'us-east-1'
             print(f"{Fore.CYAN}Bucket region: {region}{Style.RESET_ALL}")
             logger.info(f"Bucket {bucket_name} region: {region}")
             if region not in output_data["metadata"]["regions_scanned"]:
@@ -2339,46 +2341,47 @@ def list_and_download_bucket(s3_client, bucket_name):
         except Exception as e:
             logger.warning(f"Could not get bucket location for {bucket_name}: {e}")
             print(f"{Fore.YELLOW}Could not get bucket location: {e}{Style.RESET_ALL}")
-        
+            region = "unknown"  # ← CHANGED: fallback region
+
         # First, count total objects for progress bar
         print(f"{Fore.BLUE}Counting objects in bucket...{Style.RESET_ALL}")
         paginator = s3_client.get_paginator('list_objects_v2')
         page_iterator = paginator.paginate(Bucket=bucket_name)
-        
+
         total_objects = 0
         total_size = 0
         objects_list = []
-        
+
         for page in page_iterator:
-            if 'Contents' in page:
-                for obj in page['Contents']:
-                    total_objects += 1
-                    total_size += obj['Size']
-                    objects_list.append(obj)
-        
+            for obj in page.get('Contents', []):
+                total_objects += 1
+                total_size += obj['Size']
+                objects_list.append(obj)
+
         if total_objects == 0:
             print(f"{Fore.YELLOW}No objects found in bucket {bucket_name}{Style.RESET_ALL}")
             logger.info(f"No objects found in bucket {bucket_name}")
             return
-        
+
         print(f"{Fore.GREEN}Found {total_objects} objects ({total_size:,} bytes / {total_size/1024/1024:.2f} MB){Style.RESET_ALL}")
         logger.info(f"Bucket {bucket_name}: {total_objects} objects, {total_size} bytes")
-        
+
         # Download with progress bar
         downloaded_count = 0
-        with tqdm(total=total_objects, desc=f"Downloading from {bucket_name}",
-                 unit="file", colour="green") as pbar:
-            
+        with tqdm(total=total_objects,
+                  desc=f"Downloading from {bucket_name}",
+                  unit="file", colour="green") as pbar:
+
             for obj in objects_list:
                 obj_key = obj['Key']
                 obj_size = obj['Size']
-                
+
                 pbar.set_description(f"Downloading {obj_key[:30]}... ({obj_size:,} bytes)")
-                
+
                 # Download the object
                 if download_s3_object(s3_client, bucket_name, obj_key, bucket_dir, pbar):
                     downloaded_count += 1
-        
+
         # Summary
         success_rate = (downloaded_count / total_objects) * 100
         print(f"\n{Fore.GREEN}Bucket Summary:{Style.RESET_ALL}")
@@ -2386,17 +2389,17 @@ def list_and_download_bucket(s3_client, bucket_name):
         print(f"  {Fore.GREEN}Successfully downloaded: {downloaded_count}{Style.RESET_ALL}")
         print(f"  {Fore.BLUE}Success rate: {success_rate:.1f}%{Style.RESET_ALL}")
         print(f"  {Fore.MAGENTA}Total size: {total_size:,} bytes ({total_size/1024/1024:.2f} MB){Style.RESET_ALL}")
-        
+
         logger.info(f"Bucket {bucket_name} summary: {downloaded_count}/{total_objects} downloaded ({success_rate:.1f}%)")
 
         # Store results for JSON output
         bucket_entry = {
             "name": bucket_name,
-            "region": region,
-            "objects": [obj["Key"] for obj in objects_list],
+            "region": region,                       # ← CHANGED: always include
+            "objects": [obj["Key"] for obj in objects_list]
         }
-        output_data["s3"]["buckets"].append(bucket_entry)
-        
+        output_data["s3"]["buckets"].append(bucket_entry)  # ← CHANGED: append after success
+
     except Exception as e:
         error_msg = f"Error processing bucket {bucket_name}: {e}"
         logger.error(error_msg)
@@ -3172,18 +3175,18 @@ else:
         print(f"{Fore.BLUE}Discovering accessible S3 buckets...{Style.RESET_ALL}")
         buckets_response = s3_client.list_buckets()
         buckets = buckets_response.get('Buckets', [])
-        
+
         print(f"{Fore.GREEN}Found {len(buckets)} accessible buckets:{Style.RESET_ALL}")
         logger.info(f"Found {len(buckets)} accessible buckets")
-        
+
         for i, bucket_info in enumerate(buckets, 1):
             bucket_name = bucket_info['Name']
             creation_date = bucket_info['CreationDate']
             print(f"{Fore.CYAN}{i}. {bucket_name} {Fore.YELLOW}(Created: {creation_date}){Style.RESET_ALL}")
-        
+
         if buckets:
             print(f"\n{Fore.MAGENTA}Proceeding to download from all {len(buckets)} buckets...{Style.RESET_ALL}")
-            
+
             # Process each bucket with overall progress
             with tqdm(total=len(buckets), desc="Processing buckets", unit="bucket", colour="blue") as bucket_pbar:
                 for bucket_info in buckets:
@@ -3194,7 +3197,7 @@ else:
         else:
             print(f"{Fore.YELLOW}No accessible buckets found.{Style.RESET_ALL}")
             logger.info("No accessible buckets found")
-            
+
     except Exception as e:
         error_msg = f"Error listing buckets: {e}"
         logger.error(error_msg)

@@ -14,8 +14,7 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
 <head>
   <meta charset="utf-8">
   <meta name="color-scheme" content="light dark">
-  <!-- favicon made from a ☁️ emoji -->
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 128 128%22><text y=%22.9em%22 font-size=%22120%22>☁️</text></svg>">
+  <link rel="icon" type="image/png" sizes="512x512" href="/docs/icon.png">
   <title>CloudTap Results</title>
   <style>
     :root{
@@ -192,7 +191,10 @@ MAIN_PAGE_HTML = '''<!DOCTYPE html>
       </style>
 </head>
 <body>
-  <h1>☁️ CloudTap Results</h1>
+  <h1>
+    <img src="/docs/icon.png" alt="CloudTap icon" style="height: 4em; vertical-align: middle;">
+    CloudTap Results
+  </h1>
   <!-- TOC container with a vertical MENU handle -->
   <div id="toc-container">
     <div id="toc-handle">MENU</div>

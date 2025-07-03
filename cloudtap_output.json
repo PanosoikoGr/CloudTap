@@ -1,0 +1,378 @@
+{
+  "metadata": {
+    "timestamp": "2025-01-01T00:00:00Z",
+    "profile": "test-profile",
+    "regions_scanned": ["us-east-1"],
+    "tool_version": "1.0.0"
+  },
+  "identity": {
+    "UserId": "AIDACKCEVSQ6C2EXAMPLE",
+    "Account": "123456789012",
+    "Arn": "arn:aws:iam::123456789012:user/test-user",
+    "credentialType": "temporary"
+  },
+  "permissions": {
+    "enumerated": [
+      "iam:GetUser",
+      "s3:ListBuckets"
+    ],
+    "bruteforced": [
+      "ec2:DescribeInstances",
+      "lambda:ListFunctions"
+    ]
+  },
+  "iam": {
+    "users": [
+      {
+        "username": "alice",
+        "attached_policies": [
+          {
+            "name": "AdministratorAccess",
+            "arn": "arn:aws:iam::aws:policy/AdministratorAccess",
+            "default_version": "v1",
+            "document": { "Statement": [ { "Effect": "Allow", "Action": "*", "Resource": "*" } ] }
+          }
+        ],
+        "inline_policies": [
+          {
+            "name": "AllowS3ReadOnly",
+            "document": {
+              "Statement": [
+                { "Effect": "Allow", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::media-assets/*" }
+              ]
+            }
+          }
+        ],
+        "groups": [
+          {
+            "name": "admins",
+            "arn": "arn:aws:iam::123456789012:group/admins",
+            "attached_policies": [
+              {
+                "name": "SecurityAudit",
+                "arn": "arn:aws:iam::aws:policy/SecurityAudit",
+                "default_version": "v2",
+                "document": { "Statement": [ { "Effect": "Allow", "Action": "*", "Resource": "*" } ] }
+              }
+            ],
+            "inline_policies": [
+              {
+                "name": "AllowRDSRead",
+                "document": {
+                  "Statement": [
+                    { "Effect": "Allow", "Action": "rds:Describe*", "Resource": "*" }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+
+      {
+        "username": "bob",
+        "attached_policies": [
+          {
+            "name": "PowerUserAccess",
+            "arn": "arn:aws:iam::aws:policy/PowerUserAccess",
+            "default_version": "v3",
+            "document": { "Statement": [ { "Effect": "Allow", "Action": "*", "Resource": "*" } ] }
+          }
+        ],
+        "inline_policies": [],
+        "groups": []
+      }
+    ]
+  },
+  "roles": {
+    "all": [
+      { "role_name": "ReadOnlyRole",  "role_arn": "arn:aws:iam::123456789012:role/ReadOnlyRole" },
+      { "role_name": "AdminRole",     "role_arn": "arn:aws:iam::123456789012:role/AdminRole" }
+    ],
+
+    "matching":  ["AdminRole"],
+    "attempted": ["ReadOnlyRole", "AdminRole"],
+
+    "successful": [
+      {
+        "role_name": "ReadOnlyRole",
+        "role_arn":  "arn:aws:iam::123456789012:role/ReadOnlyRole",
+        "credentials": {
+          "AccessKeyId": "ASIAEXAMPLEACCESS",
+          "SecretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+          "SessionToken": "IQoJb3JpZ2luX2VjEIm//////////wEaCXVzLWVhc3QtMSJHMEUC…JpZ2luX2VjEIm//////////wEaCXVzLWVhc3QtMSJHMEUC…JpZ2luX2VjEIm//////////wEaCXVzLWVhc3QtMSJHMEUC…JpZ2luX2VjEIm//////////wEaCXVzLWVhc3QtMSJHMEUC…JpZ2luX2VjEIm//////////wEaCXVzLWVhc3QtMSJHMEUC…",
+          "Expiration": "2025-06-22T00:00:00Z"
+        },
+        "managed_policies": [
+          {
+            "name": "ReadOnlyAccess",
+            "arn":  "arn:aws:iam::aws:policy/ReadOnlyAccess",
+            "default_version": "v6",
+            "document": {
+              "Statement": [
+                { "Effect": "Allow", "Action": "*:Describe*", "Resource": "*" }
+              ]
+            }
+          }
+        ],
+        "inline_policies": [],
+        "permissions": [
+          "s3:ListBucket",
+          "ec2:DescribeInstances"
+        ]
+      }
+    ],
+
+    "details": {
+      "ReadOnlyRole": {
+        "arn": "arn:aws:iam::123456789012:role/ReadOnlyRole",
+        "managed_policies": [
+          {
+            "name": "ReadOnlyAccess",
+            "arn":  "arn:aws:iam::aws:policy/ReadOnlyAccess",
+            "default_version": "v6",
+            "document": {
+              "Statement": [
+                { "Effect": "Allow", "Action": "*:Describe*", "Resource": "*" }
+              ]
+            }
+          }
+        ],
+        "inline_policies":  [],
+        "permissions": ["s3:ListBucket", "ec2:DescribeInstances"]
+      },
+      "AdminRole": {
+        "arn": "arn:aws:iam::123456789012:role/AdminRole",
+        "managed_policies": [
+          {
+            "name": "AdministratorAccess",
+            "arn":  "arn:aws:iam::aws:policy/AdministratorAccess",
+            "default_version": "v1",
+            "document": { "Statement": [ { "Effect": "Allow", "Action": "*", "Resource": "*" } ] }
+          }
+        ],
+        "inline_policies": [],
+        "permissions": ["*"]
+      }
+    }
+  },
+    "ec2": {
+    "regions": {
+      "us-east-1": {
+        "instances": 4,
+        "running": 3,
+        "volumes": 6,
+        "security_groups": [
+          "sg-0123456789abcdef0",
+          "sg-0fedcba9876543210"
+        ]
+      },
+      "eu-west-1": {
+        "instances": 2,
+        "running": 1,
+        "volumes": 3,
+        "security_groups": ["sg-0ffedcba987654321"]
+      }
+    },
+    "instances": [
+      {
+        "region": "us-east-1",
+        "id": "i-0abcd1234ef567890",
+        "state": "running",
+        "public_ip": "18.204.10.55",
+        "private_ip": "10.0.1.25",
+        "type": "t3.medium",
+        "ami": "ami-0aa12bb34cc56d789",
+        "key_pair": "prod-key",
+        "iam_profile": "arn:aws:iam::123456789012:instance-profile/WebServerProfile",
+        "security_groups": ["sg-0123456789abcdef0"],
+        "volumes": ["vol-04aa5bb6c7d8e9f01"]
+      },
+      {
+        "region": "eu-west-1",
+        "id": "i-0fedcba9876543210",
+        "state": "stopped",
+        "public_ip": "",
+        "private_ip": "172.31.12.8",
+        "type": "t2.micro",
+        "ami": "ami-0123abcd4567ef890",
+        "key_pair": "",
+        "iam_profile": "",
+        "security_groups": ["sg-0ffedcba987654321"],
+        "volumes": ["vol-0abc1def2a3b4c5d6"]
+      }
+    ]
+  },
+  "s3": {
+    "buckets": [
+      {
+        "name": "project-backups",
+        "region": "us-east-1",
+        "objects": [
+          "2025/06/21/db-backup.sql.gz",
+          "2025/06/21/app-logs.zip",
+          "README.txt"
+        ]
+      },
+      {
+        "name": "media-assets",
+        "region": "eu-central-1",
+        "objects": [
+          "images/logo.png",
+          "videos/intro.mp4",
+          "docs/style-guide.pdf"
+        ]
+      }
+    ]
+  },
+  "secrets_manager": {
+    "secrets": [
+      {"name": "dbPassword", "value": "p@ssw0rd!"}
+    ]
+  },
+"sns": {
+    "topics": [
+      {
+        "region": "us-east-1",
+        "name": "alerts",
+        "arn": "arn:aws:sns:us-east-1:123456789012:alerts",
+        "subscription_count": 2
+      },
+      {
+        "region": "us-east-1",
+        "name": "billing-updates",
+        "arn": "arn:aws:sns:us-east-1:123456789012:billing-updates",
+        "subscription_count": 0
+      },
+      {
+        "region": "eu-west-1",
+        "name": "deploy-notifications",
+        "arn": "arn:aws:sns:eu-west-1:123456789012:deploy-notifications",
+        "subscription_count": 1
+      }
+    ],
+    "subscriptions": [
+      {
+        "region": "us-east-1",
+        "topic_arn": "arn:aws:sns:us-east-1:123456789012:alerts",
+        "protocol": "email",
+        "endpoint": "ale***@example.com"
+      },
+      {
+        "region": "us-east-1",
+        "topic_arn": "arn:aws:sns:us-east-1:123456789012:alerts",
+        "protocol": "lambda",
+        "endpoint": "arn:aws:lambda:us-east-1:123456789012:function:processAlerts"
+      },
+      {
+        "region": "eu-west-1",
+        "topic_arn": "arn:aws:sns:eu-west-1:123456789012:deploy-notifications",
+        "protocol": "https",
+        "endpoint": "https://hooks.example.com/deploy"
+      }
+    ]
+  },
+  "beanstalk": {
+    "applications": [
+      {
+        "region": "us-east-1",
+        "application": "my-blog",
+        "environments": [
+          "my-blog-prod",
+          "my-blog-dev"
+        ],
+        "env_var_keys": {
+          "my-blog-prod": [
+            "DB_PASSWORD",
+            "SECRET_KEY"
+          ],
+          "my-blog-dev": []
+        }
+      },
+      {
+        "region": "eu-west-1",
+        "application": "ecommerce-store",
+        "environments": [
+          "ecom-prod"
+        ],
+        "env_var_keys": {
+          "ecom-prod": [
+            "STRIPE_KEY",
+            "JWT_SECRET"
+          ]
+        }
+      }
+    ],
+    "environments": [
+      "my-blog-prod",
+      "my-blog-dev",
+      "ecom-prod"
+    ]
+  },
+  "lambda": {
+    "functions": [
+      {
+        "function_name": "helloWorld",
+        "region": "us-east-1",
+        "runtime": "python3.8"
+      }
+    ]
+  },
+  "ecs": {
+    "clusters": [
+      {
+        "region": "us-east-1",
+        "name": "prod-cluster",
+        "services": 5,
+        "tasks": 12         
+      },
+      {
+        "region": "eu-west-1",
+        "name": "dev-cluster",
+        "services": 2,
+        "tasks": 4
+      }
+    ]
+  },
+"privilege_escalation": {
+    "paths": [
+      {
+        "id": 1,
+        "name": "Creating a new policy version",
+        "description": "Create a new version of an IAM policy with custom permissions using the --set-as-default flag",
+        "impact": "Full administrator access",
+        "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/",
+        "required_permissions": ["iam:CreatePolicyVersion"],
+        "optional_permissions": [],
+        "optional_found": []
+      },
+      {
+        "id": 14,
+        "name": "Updating the AssumeRolePolicyDocument of a role",
+        "description": "Change assume-role policy to allow you to assume any existing role",
+        "impact": "Privileges of target role (no escalation to full admin)",
+        "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/",
+        "required_permissions": ["iam:UpdateAssumeRolePolicy", "sts:AssumeRole"],
+        "optional_permissions": [],
+        "optional_found": []
+      },
+      {
+        "id": 17,
+        "name": "Passing a role to a new Lambda function, then triggering it with DynamoDB",
+        "description": "Create Lambda function triggered by DynamoDB events to execute with higher privileges",
+        "impact": "Access to Lambda service role permissions (no escalation to full admin)",
+        "link": "https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/",
+        "required_permissions": [
+          "iam:PassRole",
+          "lambda:CreateFunction",
+          "lambda:CreateEventSourceMapping"
+        ],
+        "optional_permissions": [
+          "dynamodb:PutItem",
+          "dynamodb:CreateTable"
+        ],
+        "optional_found": ["dynamodb:PutItem"]
+      }
+    ]
+  }
+}

@@ -457,6 +457,66 @@ function createIamAccordion(users) {
     return wrap;
 }
 
+function createCognitoAccordion(regions) {
+    if (!Array.isArray(regions) || !regions.length) {
+        return document.createTextNode('None');
+    }
+
+    const wrap = document.createElement('div');
+
+    regions.forEach(region => {
+        const det = document.createElement('details');
+        const sum = document.createElement('summary');
+        sum.textContent = `[${region.region}] ${region.user_pools.length} user pools, ${region.identity_pools.length} identity pools`;
+        det.appendChild(sum);
+
+        // User Pools Table
+        if (region.user_pools.length) {
+            const upTbl = document.createElement('table');
+            const upHead = document.createElement('tr');
+            upHead.innerHTML = '<th>User Pool Name</th><th>ID</th><th>Status</th><th>MFA</th><th>Users</th>';
+            upTbl.appendChild(upHead);
+
+            region.user_pools.forEach(pool => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${pool.name}</td>
+                    <td>${pool.id}</td>
+                    <td>${pool.status}</td>
+                    <td>${pool.mfa_configuration}</td>
+                    <td>${pool.estimated_users}</td>
+                `;
+                upTbl.appendChild(tr);
+            });
+
+            det.appendChild(upTbl);
+        }
+
+        // Identity Pools Table
+        if (region.identity_pools.length) {
+            const ipTbl = document.createElement('table');
+            const ipHead = document.createElement('tr');
+            ipHead.innerHTML = '<th>Identity Pool Name</th><th>ID</th>';
+            ipTbl.appendChild(ipHead);
+
+            region.identity_pools.forEach(pool => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${pool.name}</td>
+                    <td>${pool.id}</td>
+                `;
+                ipTbl.appendChild(tr);
+            });
+
+            det.appendChild(ipTbl);
+        }
+
+        wrap.appendChild(det);
+    });
+
+    return wrap;
+}
+
 function hasRoleData(roles) {
     return Object.values(roles).some(value => {
     if (Array.isArray(value)) {
@@ -837,6 +897,23 @@ fetch('/data')
 
             add('ECS Clusters', ecsSection);
         }
+
+        if (data.cognito?.regions?.length) {
+            const cognitoSection = renderSection('Cognito User and Identity Pools',
+                                                createCognitoAccordion(data.cognito.regions));
+
+            const cognitoHelpCommands = [
+                "aws cognito-idp list-user-pools --max-results 60 --region <region>",
+                "aws cognito-idp describe-user-pool --user-pool-id <pool-id> --region <region>",
+                "aws cognito-identity list-identity-pools --max-results 60 --region <region>"
+            ];
+
+            const helpSection = createHelpSection(cognitoHelpCommands);
+            cognitoSection.appendChild(helpSection);
+
+            add('Cognito Enumeration', cognitoSection);
+        }
+
 
 
         if (data.privilege_escalation?.paths?.length) {

@@ -51,6 +51,11 @@ output_data = {
     "beanstalk": {"applications": [], "environments": []},
     "lambda": {"functions": []},
     "ecs": {"clusters": []},
+    "cognito": {
+        "user_pools_total": 0,
+        "identity_pools_total": 0,
+        "regions": []
+    },
 }
 
 AWS_REGIONS = [
@@ -2710,6 +2715,133 @@ class AWSPrivEscAnalyzer:
                 
             print("\n")
 
+def analyze_cognito_all_regions(session, current_region):
+    """Enumerate Cognito user pools and identity pools across all regions"""
+    print(f"\n{Fore.YELLOW}=== Cognito Enumeration ==={Style.RESET_ALL}")
+    logger.info("Starting Cognito enumeration")
+
+    search_all_regions = input(f"{Fore.GREEN}Search Cognito in all regions? (y/n) [default: current region only]: {Style.RESET_ALL}").strip().lower()
+
+    regions_to_scan = []
+    if search_all_regions in ['y', 'yes']:
+        print(f"{Fore.BLUE}Getting all available regions...{Style.RESET_ALL}")
+        try:
+            ec2_client = session.client('ec2', region_name=current_region)
+            regions_response = ec2_client.describe_regions()
+            regions_to_scan = [region['RegionName'] for region in regions_response['Regions']]
+            print(f"{Fore.GREEN}Will scan {len(regions_to_scan)} regions: {', '.join(regions_to_scan)}{Style.RESET_ALL}")
+            logger.info(f"Scanning Cognito in all {len(regions_to_scan)} regions")
+        except Exception as e:
+            print(f"{Fore.RED}❌ Error getting regions dynamically: {e}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Falling back to hardcoded region list...{Style.RESET_ALL}")
+            logger.error(f"Error getting regions dynamically: {e}")
+            regions_to_scan = AWS_REGIONS  # Make sure AWS_REGIONS is defined elsewhere in your code
+    else:
+        regions_to_scan = [current_region]
+        print(f"{Fore.CYAN}Scanning Cognito in current region: {current_region}{Style.RESET_ALL}")
+        logger.info(f"Scanning Cognito in current region only: {current_region}")
+
+    total_user_pools = 0
+    total_identity_pools = 0
+    cognito_entries = []
+
+    for region in regions_to_scan:
+        print(f"\n{Fore.MAGENTA}🌍 Region: {region}{Style.RESET_ALL}")
+        logger.info(f"Scanning Cognito in region: {region}")
+
+        try:
+            cognito_client = session.client('cognito-idp', region_name=region)
+            identity_client = session.client('cognito-identity', region_name=region)
+        except Exception as e:
+            print(f"{Fore.RED}❌ Error creating Cognito clients in {region}: {e}{Style.RESET_ALL}")
+            logger.error(f"Error creating Cognito clients in {region}: {e}")
+            continue
+
+        # Enumerate user pools
+        user_pool_entries = []
+        try:
+            user_pools_resp = cognito_client.list_user_pools(MaxResults=60)
+            user_pools = user_pools_resp.get('UserPools', [])
+            print(f"{Fore.GREEN}Found {len(user_pools)} Cognito user pools{Style.RESET_ALL}")
+
+            for up in user_pools:
+                user_pool_id = up['Id']
+                user_pool_name = up['Name']
+
+                # Get detailed info
+                up_desc = cognito_client.describe_user_pool(UserPoolId=user_pool_id)['UserPool']
+
+                print(f"\n{Fore.CYAN}User Pool: {user_pool_name}{Style.RESET_ALL}")
+                print(f"  {Fore.GREEN}ID: {user_pool_id}{Style.RESET_ALL}")
+                print(f"  {Fore.GREEN}Status: {up_desc.get('Status', 'N/A')}{Style.RESET_ALL}")
+                print(f"  {Fore.GREEN}Estimated Users: {up_desc.get('EstimatedNumberOfUsers', 'N/A')}{Style.RESET_ALL}")
+
+                user_pool_entries.append({
+                    "id": user_pool_id,
+                    "name": user_pool_name,
+                    "status": up_desc.get('Status', ''),
+                    "creation_date": up_desc.get('CreationDate', '').isoformat() if up_desc.get('CreationDate') else '',
+                    "last_modified_date": up_desc.get('LastModifiedDate', '').isoformat() if up_desc.get('LastModifiedDate') else '',
+                    "mfa_configuration": up_desc.get('MfaConfiguration', ''),
+                    "estimated_users": up_desc.get('EstimatedNumberOfUsers', 0)
+                })
+
+            total_user_pools += len(user_pools)
+
+        except Exception as e:
+            print(f"{Fore.RED}❌ Error listing user pools in {region}: {e}{Style.RESET_ALL}")
+            logger.error(f"Error listing user pools in {region}: {e}")
+
+        # Enumerate identity pools
+        identity_pool_entries = []
+        try:
+            identity_pools_resp = identity_client.list_identity_pools(MaxResults=60)
+            identity_pools = identity_pools_resp.get('IdentityPools', [])
+            print(f"{Fore.GREEN}Found {len(identity_pools)} Cognito identity pools{Style.RESET_ALL}")
+
+            for ip in identity_pools:
+                pool_id = ip['IdentityPoolId']
+                pool_name = ip['IdentityPoolName']
+
+                print(f"\n{Fore.CYAN}Identity Pool: {pool_name}{Style.RESET_ALL}")
+                print(f"  {Fore.GREEN}ID: {pool_id}{Style.RESET_ALL}")
+
+                identity_pool_entries.append({
+                    "id": pool_id,
+                    "name": pool_name
+                })
+
+            total_identity_pools += len(identity_pools)
+
+        except Exception as e:
+            print(f"{Fore.RED}❌ Error listing identity pools in {region}: {e}{Style.RESET_ALL}")
+            logger.error(f"Error listing identity pools in {region}: {e}")
+
+        # Append region entry
+        cognito_entries.append({
+            "region": region,
+            "user_pools": user_pool_entries,
+            "identity_pools": identity_pool_entries
+        })
+
+        if region not in output_data["metadata"]["regions_scanned"]:
+            output_data["metadata"]["regions_scanned"].append(region)
+
+    # Store results in output_data
+    output_data["cognito"] = {
+        "user_pools_total": total_user_pools,
+        "identity_pools_total": total_identity_pools,
+        "regions": cognito_entries
+    }
+
+    # Final summary
+    print(f"\n{Fore.GREEN}🌍 Cognito Enumeration Summary:{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Regions scanned: {len(regions_to_scan)}{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Total user pools: {total_user_pools}{Style.RESET_ALL}")
+    print(f"  {Fore.CYAN}Total identity pools: {total_identity_pools}{Style.RESET_ALL}")
+
+    logger.info(f"Cognito enumeration complete: {total_user_pools} user pools, {total_identity_pools} identity pools across {len(regions_to_scan)} regions.")
+
 def extract_permissions_from_policy(policy_document):
     if isinstance(policy_document, dict):
         statements = policy_document.get('Statement', [])
@@ -3248,7 +3380,8 @@ print(f"{Fore.CYAN}3. List All SNS Subscriptions{Style.RESET_ALL}")
 print(f"{Fore.CYAN}4. Analyze Beanstalk Environments{Style.RESET_ALL}")
 print(f"{Fore.CYAN}5. Analyze EC2 and EBS{Style.RESET_ALL}")
 print(f"{Fore.CYAN}6. Analyze ECS{Style.RESET_ALL}")
-print(f"{Fore.RED}7. Run Full Scan{Style.RESET_ALL}")
+print(f"{Fore.CYAN}7. Analyze Cognito{Style.RESET_ALL}")
+print(f"{Fore.RED}8. Run Full Scan{Style.RESET_ALL}")
 print(f"{Fore.CYAN}Press Enter to skip optional analyses{Style.RESET_ALL}")
 
 choice = input(f"{Fore.GREEN}Enter your choice (1-7) or press Enter to continue: {Style.RESET_ALL}").strip()
@@ -3266,12 +3399,15 @@ elif choice == "5":
 elif choice == "6":
     analyze_ecs_clusters(session, region)
 elif choice == "7":
+    analyze_cognito_all_regions(session, region)
+elif choice == "8":
     analyze_lambda_functions(session, region)
     analyze_sns_topics(session, region)
     list_all_sns_subscriptions(session, region)
     analyze_beanstalk_environments(session, region)
     analyze_ec2_instances(session, region)
     analyze_ecs_clusters(session, region)
+    analyze_cognito_all_regions(session, region)
 elif choice == "":
     print(f"{Fore.BLUE}Skipping optional analyses...{Style.RESET_ALL}")
 else:

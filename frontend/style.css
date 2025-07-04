@@ -16,7 +16,6 @@ body.dark{
 body{font-family:'Segoe UI',sans-serif;margin:0;padding:0;
         background:var(--bg);color:var(--fg);}
 h1{color:var(--h1);margin:0 0 20px 0;}
-/* …(everything else the same but switch literal colors → var(--…))… */
 
 /* ---------- 1C. toggle button ---------- */
 #themeToggle{
@@ -89,6 +88,26 @@ section {
     width: 90%;
     box-shadow: var(--shadow);
 }
+
+section pre {
+    background: #f8f8f8;
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+section pre:hover {
+    background: #e6e6e6;
+}
+
+body.dark section pre {
+    background: #2f2f33;
+}
+
+body.dark section pre:hover {
+    background: #3a3a3d;
+}
+
 h2 {
     color: var(--h2);
     margin-top: 0;

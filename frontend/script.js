@@ -544,6 +544,34 @@ function createRolesAccordion(rolesObj) {
 
     return wrap;
 }
+function createHelpSection(commands) {
+    const section = document.createElement('section');
+
+    const h3 = document.createElement('h3');
+    h3.textContent = 'Commands Used (Click to copy)';
+    section.appendChild(h3);
+
+    commands.forEach(cmd => {
+        const pre = document.createElement('pre');
+        pre.textContent = cmd;
+        pre.style.cursor = 'pointer';
+        pre.title = 'Click to copy';
+        pre.addEventListener('click', () => {
+            navigator.clipboard.writeText(cmd)
+                .then(() => {
+                    pre.style.background = '#1e812e'; // success flash
+                    setTimeout(() => pre.style.background = '', 500);
+                })
+                .catch(() => {
+                    pre.style.background = '#f2dede'; // fail flash
+                    setTimeout(() => pre.style.background = '', 500);
+                });
+        });
+        section.appendChild(pre);
+    });
+
+    return section;
+}
 
 (function(){
     const BODY = document.body;
@@ -600,9 +628,25 @@ fetch('/data')
         }
 
         if (data.ec2?.instances?.length) {
-            add('EC2 Instances',
-                renderSection('EC2 Instances', createEc2Accordion(data.ec2.instances)));
+            const ec2InstancesSection = renderSection('EC2 Instances', createEc2Accordion(data.ec2.instances));
+
+            const ec2HelpCommands = [
+                "aws ec2 describe-instances --region <region>",
+                "aws ec2 describe-security-groups --region <region>",
+                "aws ec2 describe-security-groups --group-ids <sg-id> --region <region>",
+                "aws ec2 describe-volumes --region <region>",
+                "aws ec2 describe-volumes --volume-ids <vol-id> --region <region>",
+                "aws iam list-instance-profiles",
+                "aws iam get-instance-profile --instance-profile-name <profile-name>",
+                "aws ec2 describe-images --image-ids <ami-id> --region <region>"
+            ];
+
+            const helpSection = createHelpSection(ec2HelpCommands);
+            ec2InstancesSection.appendChild(helpSection);
+
+            add('EC2 Instances', ec2InstancesSection);
         }
+
 
         if (data.lambda?.functions?.length) {
             add('Lambda Functions',

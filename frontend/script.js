@@ -649,9 +649,23 @@ fetch('/data')
 
 
         if (data.lambda?.functions?.length) {
-            add('Lambda Functions',
-                renderSection('Lambda Functions',
-                              createTableFromObjects(data.lambda.functions)));
+            const lambdaSection = renderSection('Lambda Functions',
+                                                createTableFromObjects(data.lambda.functions));
+
+            const lambdaHelpCommands = [
+                "aws lambda list-functions --region <region>",
+                "aws lambda get-function-configuration --function-name <function-name> --region <region>",
+                "aws lambda get-policy --function-name <function-name> --region <region>",
+                "aws lambda get-function-url-config --function-name <function-name> --region <region>",
+                "aws lambda list-event-source-mappings --function-name <function-name> --region <region>",
+                "aws lambda get-function --function-name <function-name> --region <region>",
+                "curl -o <filename>.zip \"<Code.Location>\""
+            ];
+
+            const helpSection = createHelpSection(lambdaHelpCommands);
+            lambdaSection.appendChild(helpSection);
+
+            add('Lambda Functions', lambdaSection);
         }
 
         if (data.beanstalk?.applications?.length) {
@@ -685,9 +699,27 @@ fetch('/data')
         }
 
         if (data.ecs?.clusters?.length) {
-            add('ECS Clusters',
-                renderSection('ECS Clusters', createTableFromObjects(data.ecs.clusters)));
+            const ecsSection = renderSection('ECS Clusters',
+                                            createTableFromObjects(data.ecs.clusters));
+            const ecsHelpCommands = [
+                "aws ecs list-clusters --region <region>",
+                "aws ecs describe-clusters --clusters <cluster-name> --region <region>",
+                "aws ecs list-services --cluster <cluster-name> --region <region>",
+                "aws ecs describe-services --cluster <cluster-name> --services <service-names> --region <region>",
+                "aws ecs list-tasks --cluster <cluster-name> --desired-status RUNNING --region <region>",
+                "aws ecs list-tasks --cluster <cluster-name> --desired-status STOPPED --region <region>",
+                "aws ecs describe-tasks --cluster <cluster-name> --tasks <task-arns> --region <region>",
+                "aws ecs list-container-instances --cluster <cluster-name> --region <region>",
+                "aws ecs describe-container-instances --cluster <cluster-name> --container-instances <instance-arns> --region <region>",
+                "aws ecs list-tags-for-resource --resource-arn <arn> --region <region>"
+            ];
+
+            const helpSection = createHelpSection(ecsHelpCommands);
+            ecsSection.appendChild(helpSection);
+
+            add('ECS Clusters', ecsSection);
         }
+
 
         if (data.privilege_escalation?.paths?.length) {
             add('Privilege Escalation',

@@ -71,10 +71,6 @@ function renderSection(title, content) {
     return section;
 }
 
-function renderIdentity(identity) {
-    return renderSection('Identity', createTableFromObjects([identity]));
-}
-
 function renderOverview(data) {
     const items = [
         ['IAM Users', data.iam?.users?.length || 0],
@@ -87,8 +83,26 @@ function renderOverview(data) {
         ['S3 Buckets', data.s3?.buckets?.length || 0]
     ];
     const tableData = items.map(([k, v]) => ({ Item: k, Count: v }));
-    return renderSection('Overview', createTableFromObjects(tableData));
+
+    // Create overview stats table
+    const statsTable = createTableFromObjects(tableData);
+
+    // Create identity table
+    const identityTable = createTableFromObjects([data.identity || {}]);
+
+    // Create a container div to hold both tables
+    const container = document.createElement('div');
+    container.appendChild(statsTable);
+
+    // Add a heading for identity for clarity
+    const identityHeading = document.createElement('h3');
+    identityHeading.textContent = 'Identity';
+    container.appendChild(identityHeading);
+    container.appendChild(identityTable);
+
+    return renderSection('Overview', container);
 }
+
 
 function renderPermissions(perms) {
     // if both empty, skip
@@ -606,7 +620,6 @@ fetch('/data')
         }
 
         add('Overview', renderOverview(data));
-        add('Identity', renderIdentity(data.identity || {}));
 
         const permsSection = renderPermissions(data.permissions || {});
         if (permsSection) add('Permissions', permsSection);

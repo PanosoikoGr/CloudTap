@@ -8,19 +8,17 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>
-    <img src="/images/icon.png" alt="CloudTap icon" style="height: 4em; vertical-align: middle;">
-    CloudTap Results
-  </h1>
-  <!-- TOC container with a vertical MENU handle -->
-  <div id="toc-container">
-    <div id="toc-handle">MENU</div>
-    <nav id="toc">
-      <!-- <ul class="toc-list">…generated links…</ul> -->
+  <div id="app">
+    <nav id="sidebar">
+      <h1>
+        <img src="/images/icon.png" alt="CloudTap icon" style="height: 4em; vertical-align: middle;">
+        CloudTap
+      </h1>
+      <ul id="menu"></ul>
     </nav>
+    <main id="content">Loading...</main>
   </div>
   <button id="themeToggle" aria-label="Toggle dark mode">🌙</button>
-  <div id="content">Loading...</div>
   <script src="script.js" defer></script>
 </body>
 </html>

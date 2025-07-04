@@ -54,8 +54,14 @@ function createList(list) {
     return ul;
 }
 
+function slugify(str) {
+    return str.toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-|-$/g, '');
+}
+
 function renderSection(title, content) {
-    const slug = title.toLowerCase().replace(/\s+/g, '-');
+    const slug = slugify(title);
     const section = document.createElement('section');
     section.id = slug;
     const h2 = document.createElement('h2');
@@ -67,6 +73,21 @@ function renderSection(title, content) {
 
 function renderIdentity(identity) {
     return renderSection('Identity', createTableFromObjects([identity]));
+}
+
+function renderOverview(data) {
+    const items = [
+        ['IAM Users', data.iam?.users?.length || 0],
+        ['Enumerated Permissions', data.permissions?.enumerated?.length || 0],
+        ['Bruteforced Permissions', data.permissions?.bruteforced?.length || 0],
+        ['Roles', data.roles?.all?.length || 0],
+        ['Successful Assumed Roles', data.roles?.successful?.length || 0],
+        ['Lambda Functions', data.lambda?.functions?.length || 0],
+        ['EC2 Instances', data.ec2?.instances?.length || 0],
+        ['S3 Buckets', data.s3?.buckets?.length || 0]
+    ];
+    const tableData = items.map(([k, v]) => ({ Item: k, Count: v }));
+    return renderSection('Overview', createTableFromObjects(tableData));
 }
 
 function renderPermissions(perms) {
@@ -545,134 +566,117 @@ function createRolesAccordion(rolesObj) {
 fetch('/data')
     .then(resp => resp.json())
     .then(data => {
-    const content = document.getElementById('content');
-    content.innerHTML = '';
+        const menu    = document.getElementById('menu');
+        const content = document.getElementById('content');
+        const sections = [];
 
-    // Identity
-    content.appendChild(renderIdentity(data.identity || {}));
+        function add(title, el) {
+            if (!el) return;
+            const id = slugify(title);
+            el.id = id;
+            sections.push({ id, title, el });
+        }
 
-    // Permissions
-    const permsSection = renderPermissions(data.permissions || {});
-    if (permsSection) content.appendChild(permsSection);
+        add('Overview', renderOverview(data));
+        add('Identity', renderIdentity(data.identity || {}));
 
-    // IAM (users/groups/roles/policies)
-    if (data.iam?.users?.length) {
-        content.appendChild(
-        renderSection('IAM → Users',
-                        createIamAccordion(data.iam.users))
-        );
-    }
-    // ROLES
-    if (data.roles && hasRoleData(data.roles)) {
-        content.appendChild(
-        renderSection('Roles (Discovery & Assumption)',
-                        createRolesAccordion(data.roles))
-        );
-    }
+        const permsSection = renderPermissions(data.permissions || {});
+        if (permsSection) add('Permissions', permsSection);
 
-    // EC2 Region Summary
-    if (data.ec2?.regions && Object.keys(data.ec2.regions).length) {
-        content.appendChild(
-        renderSection('EC2 Regions',
-                        makeEc2RegionTable(data.ec2.regions))
-        );
-    }
+        if (data.iam?.users?.length) {
+            add('IAM Users',
+                renderSection('IAM → Users', createIamAccordion(data.iam.users)));
+        }
 
-    if (data.ec2?.instances?.length) {
-        content.appendChild(
-        renderSection('EC2 Instances',
-                        createEc2Accordion(data.ec2.instances))
-        );
-    }
+        if (data.roles && hasRoleData(data.roles)) {
+            add('Roles',
+                renderSection('Roles (Discovery & Assumption)',
+                              createRolesAccordion(data.roles)));
+        }
 
-    // Lambda
-    if (data.lambda?.functions?.length) {
-        content.appendChild(renderSection(
-        'Lambda Functions',
-        createTableFromObjects(data.lambda.functions)
-        ));
-    }
+        if (data.ec2?.regions && Object.keys(data.ec2.regions).length) {
+            add('EC2 Regions',
+                renderSection('EC2 Regions', makeEc2RegionTable(data.ec2.regions)));
+        }
 
-    // Beanstalk
-    if (data.beanstalk?.applications?.length) {
-        content.appendChild(
-        renderSection('Beanstalk Applications',
-                        createBeanstalkAccordion(data.beanstalk.applications))
-        );
-    }
+        if (data.ec2?.instances?.length) {
+            add('EC2 Instances',
+                renderSection('EC2 Instances', createEc2Accordion(data.ec2.instances)));
+        }
 
-    if (data.beanstalk?.environments?.length) {
-        content.appendChild(
-        renderSection('Beanstalk Environments (flat list)',
-                        createList(data.beanstalk.environments))
-        );
-    }
+        if (data.lambda?.functions?.length) {
+            add('Lambda Functions',
+                renderSection('Lambda Functions',
+                              createTableFromObjects(data.lambda.functions)));
+        }
 
-    // Secrets Manager
-    if (data.secrets_manager?.secrets?.length) {
-        content.appendChild(renderSection(
-        'Secrets Manager',
-        createTableFromObjects(data.secrets_manager.secrets)
-        ));
-    }
+        if (data.beanstalk?.applications?.length) {
+            add('Beanstalk Applications',
+                renderSection('Beanstalk Applications',
+                              createBeanstalkAccordion(data.beanstalk.applications)));
+        }
 
-    // S3
-    if (data.s3?.buckets?.length) {
-        content.appendChild(
-        renderSection(
-            'S3 Buckets',
-            createS3Accordion(data.s3.buckets)
-        )
-        );
-    }
+        if (data.beanstalk?.environments?.length) {
+            add('Beanstalk Environments',
+                renderSection('Beanstalk Environments (flat list)',
+                              createList(data.beanstalk.environments)));
+        }
 
-    // SNS
-    if (data.sns?.topics?.length) {
-        content.appendChild(
-        renderSection(
-            'SNS Topics',
-            createSnsAccordion(data.sns.topics, data.sns.subscriptions || [])
-        )
-        );
-    }
+        if (data.secrets_manager?.secrets?.length) {
+            add('Secrets Manager',
+                renderSection('Secrets Manager',
+                              createTableFromObjects(data.secrets_manager.secrets)));
+        }
 
-    // ECS
-    if (data.ecs?.clusters?.length) {
-        content.appendChild(
-        renderSection('ECS Clusters',
-                        createTableFromObjects(data.ecs.clusters))
-        );
-    }
+        if (data.s3?.buckets?.length) {
+            add('S3 Buckets',
+                renderSection('S3 Buckets',
+                              createS3Accordion(data.s3.buckets)));
+        }
 
-    //Priv Esc
-    if (data.privilege_escalation?.paths?.length) {
-        content.appendChild(
-        renderSection('Privilege Escalation Paths',
-                        createPrivilegeAccordion(data.privilege_escalation.paths))
-        );
-    }
+        if (data.sns?.topics?.length) {
+            add('SNS Topics',
+                renderSection('SNS Topics',
+                              createSnsAccordion(data.sns.topics, data.sns.subscriptions || [])));
+        }
 
-    // after you populate `content.innerHTML = ''` and append all sections...
-    const toc = document.getElementById('toc');
-    const headings = document.querySelectorAll('#content section h2');
-    if (headings.length) {
-        const ul = document.createElement('ul');
-        ul.className = 'toc-list';
-        headings.forEach(h2 => {
-        const li = document.createElement('li');
-        const a  = document.createElement('a');
-        const title = h2.textContent;
-        const slug  = h2.parentElement.id;
-        a.textContent = title;
-        a.href = `#${slug}`;
-        li.appendChild(a);
-        ul.appendChild(li);
+        if (data.ecs?.clusters?.length) {
+            add('ECS Clusters',
+                renderSection('ECS Clusters', createTableFromObjects(data.ecs.clusters)));
+        }
+
+        if (data.privilege_escalation?.paths?.length) {
+            add('Privilege Escalation',
+                renderSection('Privilege Escalation Paths',
+                              createPrivilegeAccordion(data.privilege_escalation.paths)));
+        }
+
+        function showSection(id) {
+            const sec = sections.find(s => s.id === id);
+            if (!sec) return;
+            content.innerHTML = '';
+            content.appendChild(sec.el);
+            document.querySelectorAll('#menu a').forEach(a => {
+                a.classList.toggle('active', a.dataset.target === id);
+            });
+        }
+
+        sections.forEach(sec => {
+            const li = document.createElement('li');
+            const a  = document.createElement('a');
+            a.textContent = sec.title;
+            a.href = '#';
+            a.dataset.target = sec.id;
+            a.addEventListener('click', e => {
+                e.preventDefault();
+                showSection(sec.id);
+            });
+            li.appendChild(a);
+            menu.appendChild(li);
         });
-        toc.appendChild(ul);
-    }
 
+        showSection('overview');
     })
     .catch(err => {
-    document.getElementById('content')
-            .textContent = 'Error loading data: ' + err;
+        document.getElementById('content').textContent = 'Error loading data: ' + err;
     });

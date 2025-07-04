@@ -612,19 +612,66 @@ fetch('/data')
         if (permsSection) add('Permissions', permsSection);
 
         if (data.iam?.users?.length) {
-            add('IAM Users',
-                renderSection('IAM → Users', createIamAccordion(data.iam.users)));
+            const iamUsersSection = renderSection('IAM Users',
+                                                createIamAccordion(data.iam.users));
+
+            const iamUsersHelpCommands = [
+                "aws iam list-users",
+                "aws iam get-user --user-name <user-name>",
+                "aws iam list-attached-user-policies --user-name <user-name>",
+                "aws iam list-user-policies --user-name <user-name>",
+                "aws iam get-user-policy --user-name <user-name> --policy-name <policy-name>",
+                "aws iam get-policy --policy-arn <policy-arn>",
+                "aws iam get-policy-version --policy-arn <policy-arn> --version-id <version-id>",
+                "aws iam list-groups-for-user --user-name <user-name>",
+                "aws iam get-group --group-name <group-name>",
+                "aws iam list-attached-group-policies --group-name <group-name>",
+                "aws iam list-group-policies --group-name <group-name>",
+                "aws iam get-group-policy --group-name <group-name> --policy-name <policy-name>"
+            ];
+
+            const helpSection = createHelpSection(iamUsersHelpCommands);
+            iamUsersSection.appendChild(helpSection);
+
+            add('IAM Users', iamUsersSection);
         }
 
         if (data.roles && hasRoleData(data.roles)) {
-            add('Roles',
-                renderSection('Roles (Discovery & Assumption)',
-                              createRolesAccordion(data.roles)));
+            const rolesSection = renderSection('Roles (Discovery & Assumption)',
+                                            createRolesAccordion(data.roles));
+
+            const rolesHelpCommands = [
+                "aws iam list-roles",
+                "aws iam get-role --role-name <role-name>",
+                "aws iam get-role-policy --role-name <role-name> --policy-name <policy-name>",
+                "aws iam list-role-policies --role-name <role-name>",
+                "aws iam list-attached-role-policies --role-name <role-name>",
+                "aws iam get-policy --policy-arn <policy-arn>",
+                "aws iam get-policy-version --policy-arn <policy-arn> --version-id <version-id>",
+                "aws sts assume-role --role-arn <role-arn> --role-session-name <session-name>"
+            ];
+
+            const helpSection = createHelpSection(rolesHelpCommands);
+            rolesSection.appendChild(helpSection);
+
+            add('Roles', rolesSection);
         }
 
         if (data.ec2?.regions && Object.keys(data.ec2.regions).length) {
-            add('EC2 Regions',
-                renderSection('EC2 Regions', makeEc2RegionTable(data.ec2.regions)));
+            const ec2RegionsSection = renderSection('EC2 Regions',
+                                                    makeEc2RegionTable(data.ec2.regions));
+
+            const ec2RegionsHelpCommands = [
+                "aws ec2 describe-regions",
+                "aws ec2 describe-instances --region <region>",
+                "aws ec2 describe-volumes --region <region>",
+                "aws ec2 describe-security-groups --region <region>"
+            ];
+
+            const helpSection = createHelpSection(ec2RegionsHelpCommands);
+            ec2RegionsSection.appendChild(helpSection);
+
+            add('EC2 Regions', ec2RegionsSection);
         }
 
         if (data.ec2?.instances?.length) {
@@ -669,33 +716,91 @@ fetch('/data')
         }
 
         if (data.beanstalk?.applications?.length) {
-            add('Beanstalk Applications',
-                renderSection('Beanstalk Applications',
-                              createBeanstalkAccordion(data.beanstalk.applications)));
+            const beanstalkAppSection = renderSection('Beanstalk Applications',
+                                                    createBeanstalkAccordion(data.beanstalk.applications));
+
+            const beanstalkAppHelpCommands = [
+                "aws elasticbeanstalk describe-applications --region <region>",
+                "aws elasticbeanstalk describe-environments --application-name <app-name> --region <region>",
+                "aws elasticbeanstalk describe-configuration-settings --application-name <app-name> --environment-name <env-name> --region <region>"
+            ];
+
+            const helpSection = createHelpSection(beanstalkAppHelpCommands);
+            beanstalkAppSection.appendChild(helpSection);
+
+            add('Beanstalk Applications', beanstalkAppSection);
         }
 
+
         if (data.beanstalk?.environments?.length) {
-            add('Beanstalk Environments',
-                renderSection('Beanstalk Environments (flat list)',
-                              createList(data.beanstalk.environments)));
+            const beanstalkEnvSection = renderSection('Beanstalk Environments (flat list)',
+                                                    createList(data.beanstalk.environments));
+
+            const beanstalkEnvHelpCommands = [
+                "aws elasticbeanstalk describe-environments --region <region>"
+            ];
+
+            const helpSection = createHelpSection(beanstalkEnvHelpCommands);
+            beanstalkEnvSection.appendChild(helpSection);
+
+            add('Beanstalk Environments', beanstalkEnvSection);
         }
 
         if (data.secrets_manager?.secrets?.length) {
-            add('Secrets Manager',
-                renderSection('Secrets Manager',
-                              createTableFromObjects(data.secrets_manager.secrets)));
+            const secretsSection = renderSection('Secrets Manager',
+                                                createTableFromObjects(data.secrets_manager.secrets));
+
+            const secretsHelpCommands = [
+                "aws secretsmanager list-secrets --region <region>",
+                "aws secretsmanager describe-secret --secret-id <secret-id> --region <region>",
+                "aws secretsmanager get-secret-value --secret-id <secret-id> --region <region>",
+                "aws secretsmanager list-secret-version-ids --secret-id <secret-id> --region <region>",
+                "aws secretsmanager list-tags-for-resource --secret-id <secret-id> --region <region>"
+            ];
+
+            const helpSection = createHelpSection(secretsHelpCommands);
+            secretsSection.appendChild(helpSection);
+
+            add('Secrets Manager', secretsSection);
         }
 
         if (data.s3?.buckets?.length) {
-            add('S3 Buckets',
-                renderSection('S3 Buckets',
-                              createS3Accordion(data.s3.buckets)));
+            const s3Section = renderSection('S3 Buckets',
+                                            createS3Accordion(data.s3.buckets));
+
+            const s3HelpCommands = [
+                "aws s3 ls",
+                "aws s3api list-buckets --region <region>",
+                "aws s3 ls s3://<bucket-name> --region <region>",
+                "aws s3api list-objects --bucket <bucket-name> --region <region>",
+                "aws s3api list-objects-v2 --bucket <bucket-name> --region <region>",
+                "aws s3api get-object --bucket <bucket-name> --key <object-key> <local-filename>",
+                "aws s3 cp s3://<bucket-name>/<object-key> <local-filename> --region <region>",
+                "aws s3 sync s3://<bucket-name> <local-folder> --region <region>"
+            ];
+
+            const helpSection = createHelpSection(s3HelpCommands);
+            s3Section.appendChild(helpSection);
+
+            add('S3 Buckets', s3Section);
         }
 
         if (data.sns?.topics?.length) {
-            add('SNS Topics',
-                renderSection('SNS Topics',
-                              createSnsAccordion(data.sns.topics, data.sns.subscriptions || [])));
+            const snsSection = renderSection('SNS Topics',
+                                            createSnsAccordion(data.sns.topics, data.sns.subscriptions || []));
+
+            const snsHelpCommands = [
+                "aws sns list-topics --region <region>",
+                "aws sns get-topic-attributes --topic-arn <topic-arn> --region <region>",
+                "aws sns list-subscriptions-by-topic --topic-arn <topic-arn> --region <region>",
+                "aws sns list-subscriptions --region <region>",
+                "aws sns subscribe --topic-arn <topic-arn> --protocol email --notification-endpoint <email> --region <region>"
+            ];
+
+            const helpSection = createHelpSection(snsHelpCommands);
+            snsSection.appendChild(helpSection);
+
+            add('SNS Topics', snsSection);
         }
 
         if (data.ecs?.clusters?.length) {

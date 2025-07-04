@@ -1,0 +1,170 @@
+:root{
+  --bg: #eaf0f6; --fg:#333;
+  --h1:#2c3e50;  --h2:#2980b9;
+  --sec-bg:#fff; --shadow:0 4px 10px rgba(0,0,0,.08);
+  --th-bg:#f5f8fa; --border:#dcdfe3;
+  --tr-even:#f9f9f9; --tr-hover:#eef2f7;
+}
+body.dark{
+    --bg:#1e1e20;   --fg:#e7e7e7;
+    --h1:#f6f6f6;   --h2:#6cb6ff;
+    --sec-bg:#2a2a2d; --shadow:0 4px 10px rgba(0,0,0,.6);
+    --th-bg:#2f2f33; --border:#444;
+    --tr-even:#262629; --tr-hover:#303035;
+}
+/* ---------- 1B. component styles (unchanged selectors, now using vars) ---------- */
+body{font-family:'Segoe UI',sans-serif;margin:0;padding:20px;
+        background:var(--bg);color:var(--fg);}
+h1{color:var(--h1);margin-bottom:30px;margin-left:5%;}
+/* …(everything else the same but switch literal colors → var(--…))… */
+
+/* ---------- 1C. toggle button ---------- */
+#themeToggle{
+    position:fixed;top:18px;right:24px;z-index:999;
+    font-size:20px;background:none;border:none;
+    cursor:pointer;user-select:none;
+}
+table td,
+table pre { word-break: break-all; white-space: pre-wrap; }
+#content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    width: 100%;
+}
+section {
+    background: var(--sec-bg);
+    border-radius: 10px;
+    padding: 20px;
+    margin: 20px 5% 20px auto;
+    width: 90%;
+    box-shadow: var(--shadow);
+}
+h2 {
+    color: var(--h2);
+    margin-top: 0;
+}
+table{
+    border-collapse: collapse;
+    width:100%;
+    margin-top:10px;
+    word-break:break-word;
+}
+th, td {
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    text-align: left;
+    vertical-align: top;
+}
+th {
+    background: var(--tr-even);
+    font-weight: bold;
+}
+tr:hover {
+    background:var(--tr-hover);
+}
+.permissions-wrapper {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin-bottom: 20px;
+}
+.permission-section {
+    flex: 0 0 45%;
+}
+.permission-list {
+    columns: 2;
+    column-gap: 20px;
+    list-style: disc inside;
+    padding: 0;
+    margin: 0;
+}
+.permission-list li {
+    break-inside: avoid;
+    padding: 4px 0;
+}
+details {
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: .75em 1em;
+    margin: 20px 5% 20px auto;
+    width: 90%;
+    background:var(--sec-bg);
+    box-shadow: 0 2px 6px var(--shadow);
+}
+summary {
+    font-weight: bold;
+    cursor: pointer;
+    color:var(--h1);
+}
+/* Container: invisible strip on the left */
+#toc-container {
+    position: fixed;
+    top: 100px;                      /* align with header */
+    left: 0;
+    height: calc(100vh - 100px);
+    width: 50px;                     /* enough to cover the handle */
+    overflow: visible;               /* let the menu slide out */
+    z-index: 1000;
+    pointer-events: none;            /* only children receive pointer events */
+}
+
+/* The vertical “MENU” handle */
+#toc-handle {
+    pointer-events: auto;
+    position: absolute;
+    top: 50%;                        
+    left: 15px;                      /* moves the handle 20px into the page */
+    transform: translate(-50%, -50%) rotate(-90deg);
+    transform-origin: center;
+    background: var(--sec-bg);
+    padding: 6px 12px;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+    box-shadow: var(--shadow);
+    font-weight: bold;
+    cursor: pointer;
+    user-select: none;
+}
+
+/* The sliding menu (initially fully hidden off-screen) */
+#toc {
+    pointer-events: auto;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 200px;
+    transform: translateX(-100%);    /* completely off-screen */
+    transition: transform 0.3s ease;
+    background: var(--sec-bg);
+    box-shadow: var(--shadow);
+    overflow-y: auto;
+    height: 100%;
+}
+
+/* Slide the menu in when you hover the container (handle or hidden area) */
+#toc-container:hover #toc {
+    transform: translateX(0);
+}
+
+/* TOC list styling */
+#toc .toc-list {
+    list-style: none;
+    margin: 0;
+    padding: 12px;
+}
+#toc .toc-list li + li {
+    margin-top: 8px;
+}
+#toc .toc-list a {
+    text-decoration: none;
+    color: var(--h2);
+}
+#toc .toc-list a:hover {
+    text-decoration: underline;
+}
+
+/* Smooth scroll for anchor links */
+html {
+    scroll-behavior: smooth;
+}
